@@ -36,4 +36,9 @@ export const config = {
       outputPerMillion: 0.60,
     },
   },
+  qdrant: {
+    url: process.env.QDRANT_URL || "http://127.0.0.1:6333",
+    apiKey: process.env.QDRANT_API_KEY || undefined,
+    collection: process.env.QDRANT_COLLECTION || "internal_knowledge",
+  },
 };

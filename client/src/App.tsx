@@ -34,6 +34,15 @@ interface AIHealth {
   error?: string;
 }
 
+interface QdrantHealth {
+  status: string;
+  qdrant: string;
+  collection: string;
+  collectionsCount?: number;
+  latencyMs?: number;
+  error?: string;
+}
+
 interface Customer {
   id: string;
   user_id: string;
@@ -179,6 +188,12 @@ export default function App() {
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiLatency, setAiLatency] = useState<number | null>(null);
 
+  // Layer 5: Qdrant Vector DB Health (Phase 11)
+  const [qdrantStatus, setQdrantStatus] = useState<HealthStatus>('idle');
+  const [qdrantData, setQdrantData] = useState<QdrantHealth | null>(null);
+  const [qdrantError, setQdrantError] = useState<string | null>(null);
+  const [qdrantLatency, setQdrantLatency] = useState<number | null>(null);
+
   // Customer Data state
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [customersSource, setCustomersSource] = useState<'cache' | 'database' | null>(null);
@@ -304,7 +319,28 @@ export default function App() {
     }
   };
 
-  // 5. Fetch Customers with Cache-Aside Telemetry
+  // 5. Check Qdrant Vector DB Health (Phase 11)
+  const checkQdrantHealth = async () => {
+    setQdrantStatus('loading');
+    setQdrantError(null);
+    const start = performance.now();
+    try {
+      const res = await fetch('http://localhost:3000/api/health/qdrant');
+      const elapsed = Math.round(performance.now() - start);
+      setQdrantLatency(elapsed);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setQdrantData(data);
+      setQdrantStatus('success');
+    } catch (err: unknown) {
+      const elapsed = Math.round(performance.now() - start);
+      setQdrantLatency(elapsed);
+      setQdrantStatus('error');
+      setQdrantError(err instanceof Error ? err.message : 'Qdrant unavailable');
+    }
+  };
+
+  // 6. Fetch Customers with Cache-Aside Telemetry
   const fetchCustomers = async () => {
     setCustomersLoading(true);
     setCustomersError(null);
@@ -575,6 +611,7 @@ export default function App() {
     checkDb();
     checkRedis();
     checkAiHealth();
+    checkQdrantHealth();
     fetchCustomers();
     fetchTelemetryHistory();
     fetchAgentTasks();
@@ -602,28 +639,28 @@ export default function App() {
                 </h1>
               </div>
               <p className="mt-1 text-sm text-slate-400">
-                Phase 7 — Simple Agent (Bounded Autonomous Planning, State Machine & Watchdog Governance)
+                Phase 11 — Vector Database / Qdrant (Semantic Search over Internal Unstructured Knowledge)
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="px-3 py-1 text-xs font-medium rounded-full bg-cyan-950/80 border border-cyan-500/30 text-cyan-300">
-                Host State Machine
+                Qdrant 1.13 Vector
               </span>
-              <span className="px-3 py-1 text-xs font-medium rounded-full bg-purple-950/80 border border-purple-500/30 text-purple-300">
-                OpenAI Provider
+              <span className="px-3 py-1 text-xs font-medium rounded-full bg-emerald-950/80 border border-emerald-500/30 text-emerald-300">
+                MySQL 8.4 Truth
               </span>
               <span className="px-3 py-1 text-xs font-medium rounded-full bg-rose-950/80 border border-rose-500/30 text-rose-300">
                 Redis 8.10 Cache
               </span>
-              <span className="px-3 py-1 text-xs font-medium rounded-full bg-emerald-950/80 border border-emerald-500/30 text-emerald-300">
-                MySQL 8.4 Truth
+              <span className="px-3 py-1 text-xs font-medium rounded-full bg-purple-950/80 border border-purple-500/30 text-purple-300">
+                OpenAI / Mock LLM
               </span>
             </div>
           </div>
         </header>
 
-        {/* Section 1: 4-Tier System Health Checks */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Section 1: 5-Tier System Health Checks */}
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {/* Card A: Express Backend Health */}
           <div className="bg-slate-900/60 backdrop-blur-md rounded-2xl border border-slate-800 p-4 shadow-lg flex flex-col justify-between">
             <div>
@@ -780,6 +817,46 @@ export default function App() {
               </button>
             </div>
           </div>
+
+          {/* Card E: Qdrant Vector DB Health (Phase 11) */}
+          <div className="bg-slate-900/60 backdrop-blur-md rounded-2xl border border-slate-800 p-4 shadow-lg flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400">Tier 5</span>
+                <span className="text-[11px] text-cyan-400 font-mono">:6333</span>
+              </div>
+              <h2 className="text-sm font-semibold text-white mt-1">Qdrant Vector DB</h2>
+              <p className="text-[11px] text-slate-400 mt-0.5">{qdrantData?.collection || 'internal_knowledge'}</p>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between">
+              <div>
+                {qdrantStatus === 'idle' && <span className="text-xs text-slate-500">Not verified</span>}
+                {qdrantStatus === 'loading' && <span className="text-xs text-cyan-400 animate-pulse">Checking...</span>}
+                {qdrantStatus === 'success' && (
+                  <div className="flex flex-col">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-400">
+                      <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+                      CONNECTED
+                    </span>
+                    <span className="text-[10px] text-slate-400">{qdrantData?.collectionsCount || 1} col &bull; {qdrantLatency}ms</span>
+                  </div>
+                )}
+                {qdrantStatus === 'error' && (
+                  <span className="text-xs font-medium text-rose-400">Unavailable: {qdrantError}</span>
+                )}
+              </div>
+              <button
+                type="button"
+                id="check-qdrant-btn"
+                onClick={checkQdrantHealth}
+                disabled={qdrantStatus === 'loading'}
+                className="px-2.5 py-1 rounded-lg text-xs font-medium bg-cyan-700 hover:bg-cyan-600 text-white transition-colors cursor-pointer shadow-sm"
+              >
+                Ping
+              </button>
+            </div>
+          </div>
         </section>
 
         {/* Section 2: Phase 7 & 8 — Agent Host & Tool Execution Studio */}
@@ -797,11 +874,11 @@ export default function App() {
                   <h2 className="text-lg font-bold text-white flex items-center gap-2">
                     Agent Host & Tool Execution Studio
                     <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-700/50 text-cyan-300">
-                      Phase 9: Web Search
+                      Phase 11: Vector Database / Qdrant
                     </span>
                   </h2>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Host boundary: <code className="text-cyan-300 font-mono">LLM Proposes → Host Authorizes → Search Adapter / Tools → Untrusted Data Normalization → LLM Reasoning</code>
+                    Host boundary: <code className="text-cyan-300 font-mono">LLM Proposes → Host Authorizes → Server Embeddings & Tenant Filter → Qdrant Vector Retrieval → LLM Observation</code>
                   </p>
                 </div>
               </div>
@@ -809,7 +886,7 @@ export default function App() {
 
             <div className="flex flex-wrap items-center gap-2">
               <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-400">
-                Watchdogs: <strong className="text-cyan-300">10 Cycles</strong> &bull; <strong className="text-purple-300">10 Tools</strong> &bull; <strong className="text-emerald-300">5 Searches</strong> &bull; <strong className="text-slate-200">180s</strong>
+                Watchdogs: <strong className="text-cyan-300">10 Cycles</strong> &bull; <strong className="text-purple-300">10 Tools</strong> &bull; <strong className="text-emerald-300">5 Searches</strong> &bull; <strong className="text-cyan-400">5 Vectors</strong> &bull; <strong className="text-slate-200">180s</strong>
               </span>
             </div>
           </div>
@@ -820,7 +897,7 @@ export default function App() {
               type="button"
               onClick={() => {
                 setAgentMode('tools');
-                setAgentTaskPrompt('Find the current CEO of Microsoft and summarize the key facts.');
+                setAgentTaskPrompt('What is our company remote work policy and how many days can employees work from home?');
               }}
               className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
                 agentMode === 'tools'
@@ -828,7 +905,7 @@ export default function App() {
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <span>⚡ Tool Calling & Search (Phase 9)</span>
+              <span>⚡ Tool Calling & Semantic Retrieval (Phase 11)</span>
             </button>
             <button
               type="button"
@@ -908,52 +985,52 @@ export default function App() {
           {/* Quick Presets */}
           <div className="space-y-1.5">
             <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-              {agentMode === 'tools' ? 'Phase 10 Tool & Multi-Source Verification Presets:' : 'Phase 7 Planning Presets:'}
+              {agentMode === 'tools' ? 'Phase 11 Semantic Retrieval & Multi-Source Presets:' : 'Phase 7 Planning Presets:'}
             </span>
             <div className="flex flex-wrap gap-2">
               {agentMode === 'tools' ? (
                 <>
                   <button
                     type="button"
-                    onClick={() => setAgentTaskPrompt('Check whether customer sarah@apexcloud.io already exists in our customer database and report their qualification status.')}
-                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-emerald-500/50 text-emerald-300 transition-colors cursor-pointer"
+                    onClick={() => setAgentTaskPrompt('What is our company remote work policy and how many days can employees work from home?')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-cyan-300 transition-colors cursor-pointer"
                   >
-                    🏢 Verify: sarah@apexcloud.io (Found)
+                    📖 Policy: Remote Work Guidelines
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAgentTaskPrompt('Check whether customer ghost@unknown.com exists in our internal customer CRM.')}
-                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-amber-500/50 text-amber-300 transition-colors cursor-pointer"
+                    onClick={() => setAgentTaskPrompt('How quickly must customer support respond to tickets and what is the SLA for P1 outages?')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-cyan-300 transition-colors cursor-pointer"
                   >
-                    🏢 Verify: ghost@unknown.com (Not Found)
+                    🎧 SLA: Customer Support Protocol
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentTaskPrompt('What are our cryptographic standards for customer data encryption at rest and in transit?')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-cyan-300 transition-colors cursor-pointer"
+                  >
+                    🔒 Security: Cryptography Standards
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentTaskPrompt('What is the company Mars exploration and interplanetary travel policy?')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-purple-500/50 text-purple-300 transition-colors cursor-pointer"
+                  >
+                    🚀 Out-of-Domain: Mars Policy (Empty)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentTaskPrompt('Check whether customer sarah@apexcloud.io already exists in our customer database and report their qualification status.')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-emerald-500/50 text-emerald-300 transition-colors cursor-pointer"
+                  >
+                    🏢 MySQL Verify: sarah@apexcloud.io
                   </button>
                   <button
                     type="button"
                     onClick={() => setAgentTaskPrompt('Search the web for Apex Cloud Innovations and verify whether contact sarah@apexcloud.io is an existing customer in our database.')}
                     className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-cyan-300 transition-colors cursor-pointer"
                   >
-                    🌐+🏢 Multi-Tool: Apex Cloud
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAgentTaskPrompt('Find the current CEO of Microsoft and summarize the key facts.')}
-                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
-                  >
-                    🔍 Search: Microsoft CEO
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAgentTaskPrompt('Check customer with email \' OR \'1\'=\'1 in database')}
-                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-rose-500/50 text-rose-300 transition-colors cursor-pointer"
-                  >
-                    🛡️ Security: SQL Injection Test
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAgentTaskPrompt('What time is it in India?')}
-                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
-                  >
-                    🕒 Time (India)
+                    🌐+🏢 Web + MySQL: Apex Cloud
                   </button>
                   <button
                     type="button"
@@ -1262,6 +1339,84 @@ export default function App() {
                             <details className="text-xs group">
                               <summary className="cursor-pointer text-[11px] font-mono text-slate-500 hover:text-slate-300 select-none">
                                 ▸ Inspect Full Normalized Observation Payload (MySQL Result)
+                              </summary>
+                              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">
+                                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans font-medium">
+                                    Validated Input (Zod)
+                                  </span>
+                                  <pre className="text-[11px] text-cyan-300 overflow-x-auto whitespace-pre-wrap">
+                                    {JSON.stringify(exec.arguments, null, 2)}
+                                  </pre>
+                                </div>
+                                <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">
+                                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans font-medium">
+                                    Authoritative Observation
+                                  </span>
+                                  <pre className="text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap">
+                                    {JSON.stringify(exec.result, null, 2)}
+                                  </pre>
+                                </div>
+                              </div>
+                            </details>
+                          </div>
+                        ) : exec.tool === 'vector_search' && exec.result && typeof exec.result === 'object' ? (
+                          <div className="space-y-3">
+                            <div className="flex flex-wrap items-center justify-between text-xs px-1 gap-2">
+                              <span className="text-slate-400">
+                                Semantic Query: <span className="font-semibold text-cyan-300 font-mono">"{(exec.arguments as any)?.query}"</span>
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  top_k: {(exec.arguments as any)?.top_k ?? 5}
+                                </span>
+                                <span className="text-[11px] text-cyan-300 font-mono bg-cyan-950/80 border border-cyan-800/60 px-2.5 py-0.5 rounded-full font-semibold">
+                                  {((exec.result as any).results || []).length} Relevant Chunks Retrieved
+                                </span>
+                              </div>
+                            </div>
+
+                            {((exec.result as any).results || []).length > 0 ? (
+                              <div className="space-y-2.5">
+                                {((exec.result as any).results || []).map((item: any, idx: number) => (
+                                  <div
+                                    key={idx}
+                                    className="p-3.5 rounded-lg bg-slate-900/90 border border-slate-800 hover:border-cyan-800/60 transition-colors space-y-2"
+                                  >
+                                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/60 pb-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                                          <span className="text-cyan-400 font-mono">#{idx + 1}</span>
+                                          <span>{item.title}</span>
+                                        </span>
+                                        <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300 border border-slate-700">
+                                          {item.source}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-950 text-emerald-300 border border-emerald-800/50">
+                                          Cosine: {item.score}
+                                        </span>
+                                        <span className="text-[10px] font-mono text-slate-500">
+                                          {item.chunk_id}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <p className="text-[11px] text-slate-200 leading-relaxed font-sans bg-slate-950/60 p-2.5 rounded border border-slate-800/50 whitespace-pre-wrap">
+                                      {item.text}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800/80 text-xs text-slate-400">
+                                No internal knowledge chunks found matching query threshold in Qdrant collection <code className="text-cyan-300 font-mono">internal_knowledge</code>.
+                              </div>
+                            )}
+
+                            <details className="text-xs group">
+                              <summary className="cursor-pointer text-[11px] font-mono text-slate-500 hover:text-slate-300 select-none">
+                                ▸ Inspect Full Normalized Observation Payload (Qdrant Vector Chunks)
                               </summary>
                               <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">

@@ -38,5 +38,13 @@ Thumbs.db
 
 # Database & Cache Snapshots
 *.rdb
+qdrant_bin/
+qdrant.zip
+storage/
+qdrant_storage/
 dump.rdb
+.qdrant-initialized
+scratch/
+server/scratch/
+
 

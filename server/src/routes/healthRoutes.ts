@@ -67,3 +67,28 @@ healthRouter.get("/ai", (_req: Request, res: Response) => {
     timeoutMs: config.llm.timeoutMs,
   });
 });
+
+// Phase 11 — Qdrant vector database health check
+healthRouter.get("/qdrant", async (_req: Request, res: Response) => {
+  const { getVectorStore } = await import("../vector/qdrantClient");
+  const store = getVectorStore();
+  const health = await store.healthCheck();
+
+  if (health.status === "healthy") {
+    res.status(200).json({
+      status: "ok",
+      qdrant: "connected",
+      collection: config.qdrant.collection,
+      collectionsCount: health.collectionsCount,
+      latencyMs: health.latency_ms,
+    });
+  } else {
+    res.status(503).json({
+      status: "error",
+      qdrant: "disconnected",
+      collection: config.qdrant.collection,
+      error: health.error,
+      latencyMs: health.latency_ms,
+    });
+  }
+});

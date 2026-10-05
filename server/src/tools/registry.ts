@@ -4,16 +4,18 @@ import { getCurrentTimeTool } from "./implementations/getCurrentTime";
 import { calculateTool } from "./implementations/calculate";
 import { webSearchTool } from "./implementations/webSearch";
 import { mysqlVerifyCustomerTool } from "./implementations/mysqlVerifyCustomer";
+import { vectorSearchTool } from "./implementations/vectorSearch";
 
 export class ToolRegistry {
   private tools: Map<string, Tool> = new Map();
 
   constructor() {
-    // Register Phase 8, 9 & 10 safe authorized tools
+    // Register Phase 8, 9, 10 & 11 safe authorized tools
     this.registerTool(getCurrentTimeTool);
     this.registerTool(calculateTool);
     this.registerTool(webSearchTool);
     this.registerTool(mysqlVerifyCustomerTool);
+    this.registerTool(vectorSearchTool);
   }
 
   /**
@@ -88,6 +90,40 @@ export class ToolRegistry {
           },
         };
         required = ["expression"];
+      } else if (t.name === "web_search") {
+        properties = {
+          query: {
+            type: "string",
+            description: "Search query string to search the live web",
+          },
+          max_results: {
+            type: "integer",
+            description: "Number of search results to return (1-10)",
+            default: 5,
+          },
+        };
+        required = ["query"];
+      } else if (t.name === "mysql_verify_customer") {
+        properties = {
+          email: {
+            type: "string",
+            description: "Customer email address to verify against authoritative internal MySQL database",
+          },
+        };
+        required = ["email"];
+      } else if (t.name === "vector_search") {
+        properties = {
+          query: {
+            type: "string",
+            description: "Natural language query to search internal company documents, policies, handbooks, and architecture specs",
+          },
+          top_k: {
+            type: "integer",
+            description: "Maximum number of semantically relevant chunks to retrieve (1-10)",
+            default: 5,
+          },
+        };
+        required = ["query"];
       }
 
       return {

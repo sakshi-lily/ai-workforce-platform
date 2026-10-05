@@ -155,6 +155,48 @@ export async function executeChatStep(
       userPrompt.includes("check customer") ||
       userPrompt.includes("@");
 
+    const isVectorSearch =
+      userPrompt.includes("policy") ||
+      userPrompt.includes("remote") ||
+      userPrompt.includes("telework") ||
+      userPrompt.includes("handbook") ||
+      userPrompt.includes("sla") ||
+      userPrompt.includes("support ticket") ||
+      userPrompt.includes("security") ||
+      userPrompt.includes("compliance") ||
+      userPrompt.includes("architecture") ||
+      userPrompt.includes("sales playbook") ||
+      userPrompt.includes("icp") ||
+      userPrompt.includes("internal document") ||
+      userPrompt.includes("qdrant") ||
+      userPrompt.includes("vector") ||
+      userPrompt.includes("mars");
+
+    // Phase 11: Internal Semantic Knowledge Retrieval
+    if (isVectorSearch && options.tools?.some((t) => (t as any).function?.name === "vector_search")) {
+      return {
+        content: null,
+        toolCall: {
+          tool: "vector_search",
+          arguments: {
+            query: userMessage?.content.trim() || "company remote work policy",
+            top_k: 5,
+          },
+          toolCallId: "sim_call_vector_1",
+        },
+        telemetry: {
+          provider: `${provider}-simulation`,
+          model,
+          inputTokens,
+          outputTokens: 25,
+          totalTokens: inputTokens + 25,
+          latencyMs: elapsed,
+          estimatedCostUsd: calculateCostUsd(inputTokens, 25),
+          status: "SUCCESS",
+        },
+      };
+    }
+
     // If query is specifically about customer verification, or contains an email without explicit web search instruction
     const asksWebSearchFirst = (userPrompt.includes("search") || userPrompt.includes("research") || userPrompt.includes("look up online")) && !userPrompt.startsWith("check customer");
 
@@ -320,6 +362,7 @@ export async function executeChatStep(
     const mysqlObs = toolObservations.find((o) => o.tool === "mysql_verify_customer");
     const timeObs = toolObservations.find((o) => o.tool === "get_current_time");
     const calcObs = toolObservations.find((o) => o.tool === "calculate");
+    const vectorObs = toolObservations.find((o) => o.tool === "vector_search");
 
     if (webObs && mysqlObs) {
       // Multi-Tool Combined Synthesis (Web Search + MySQL Verification)
@@ -401,6 +444,31 @@ export async function executeChatStep(
       answer = `It is currently ${timeObs.data.formatted} (Timezone: ${timeObs.data.timezone}).`;
     } else if (calcObs && calcObs.success) {
       answer = `The calculated result for expression '${calcObs.data.expression}' is ${calcObs.data.result}.`;
+    } else if (vectorObs) {
+      if (vectorObs.success) {
+        const results = vectorObs.data?.results || [];
+        if (results.length > 0) {
+          const formattedChunks = results
+            .map(
+              (r: any, idx: number) =>
+                `### Result ${idx + 1} — Score: ${r.score}\n` +
+                `**Document:** ${r.title} (\`${r.source}\`)\n` +
+                `**Chunk ID:** \`${r.chunk_id}\`\n\n` +
+                `> ${r.text.replace(/\n/g, "\n> ")}`
+            )
+            .join("\n\n");
+
+          answer =
+            `### Internal Knowledge Retrieval Results (Phase 11)\n\n` +
+            `Retrieved ${results.length} relevant chunk(s) from internal knowledge vector store in ${vectorObs.data.duration_ms}ms:\n\n` +
+            `${formattedChunks}\n\n` +
+            `*(Note: Phase 11 ends at vector retrieval. The relevant chunks above are verified observations; full grounded generation begins in Phase 12).*`;
+        } else {
+          answer = `Vector search in internal knowledge index completed (${vectorObs.data?.duration_ms ?? 0}ms), but found no relevant documents matching the query.`;
+        }
+      } else {
+        answer = `Internal knowledge vector search failed: ${vectorObs.error?.message || "Unknown retrieval error"}`;
+      }
     }
 
     const outputTokens = Math.max(25, Math.round(answer.length / 4));

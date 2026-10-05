@@ -14,6 +14,7 @@ export const AGENT_CONFIG = {
   MAX_WEB_SEARCHES: 5,
   MAX_SEARCH_RESULTS: 10,
   MAX_MYSQL_VERIFICATIONS: 5,
+  MAX_VECTOR_SEARCHES: 5,
   MAX_EXECUTION_TIME_MS: 180000, // 180 seconds
   MAX_PLAN_STEPS: 10,
   MIN_PLAN_STEPS: 1,
@@ -24,5 +25,6 @@ export const AGENT_CONFIG = {
 
   // Context & Identity
   DEFAULT_USER_ID: "usr_phase4_seed_001",
+  DEFAULT_ORGANIZATION_ID: "org-demo-001",
   AGENT_ROLE: "planning_agent",
 } as const;

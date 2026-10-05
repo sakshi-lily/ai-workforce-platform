@@ -54,6 +54,7 @@ export interface CreateAgentTaskInput {
   task: string;
   title?: string;
   userId?: string;
+  organizationId?: string;
   priority?: "LOW" | "NORMAL" | "HIGH" | "URGENT";
   mode?: "planning" | "tools";
   allowedTools?: string[];

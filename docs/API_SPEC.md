@@ -99,24 +99,70 @@ This document defines the API endpoints and tool interfaces for the **AI Workfor
 ---
 
 ### 2.2 `mysql_verify_customer`
-- **Description:** Checks candidate domain against the existing customer database to prevent duplicate outreach.
+- **Description:** Checks candidate email against the internal MySQL database for existing customer accounts and qualification score.
 - **Security Context:** Session-bound `user_id` injected automatically by backend.
 - **Input Parameters:**
   ```json
   {
     "type": "object",
     "properties": {
-      "domain": { "type": "string", "description": "Domain name to check (e.g. example.com)" },
-      "company_name": { "type": "string", "description": "Company name fallback" }
+      "email": { "type": "string", "description": "Customer email to check (e.g. sarah@apexcloud.io)" }
     },
-    "required": ["domain"]
+    "required": ["email"]
   }
   ```
 - **Output Schema:**
   ```json
   {
-    "exists": false,
-    "domain": "example-saas.in",
-    "status": "NOT_FOUND"
+    "found": true,
+    "customer": {
+      "id": "cust-001",
+      "company_name": "Apex Cloud Innovations",
+      "domain": "apexcloud.io",
+      "contact_name": "Sarah Chen",
+      "contact_email": "sarah@apexcloud.io",
+      "industry": "Cloud Infrastructure",
+      "qualification_score": 92,
+      "status": "QUALIFIED",
+      "created_at": "2026-10-01T10:00:00.000Z"
+    }
   }
   ```
+
+---
+
+### 2.3 `vector_search` (Phase 11)
+- **Description:** Performs dense vector semantic similarity search over internal unstructured company knowledge (employee handbook, architecture, security policies, SLAs) via Qdrant.
+- **Risk Level:** `READ_ONLY`
+- **Security Context:** Host-controlled `organization_id` filter strictly injected; collection selection and raw embeddings are server-managed. The LLM cannot provide raw vectors, arbitrary collections, or filters.
+- **Input Parameters (Zod-enforced):**
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "query": { "type": "string", "description": "Natural-language semantic search query (2-500 chars)" },
+      "top_k": { "type": "integer", "description": "Number of relevant chunks to retrieve (1-10)", "default": 5 }
+    },
+    "required": ["query"]
+  }
+  ```
+- **Output Schema:**
+  ```json
+  {
+    "results": [
+      {
+        "score": 0.8268,
+        "document_id": "doc-emp-handbook",
+        "chunk_id": "doc-emp-handbook:v1:chunk-000",
+        "title": "Employee Handbook — Remote Work & Workplace Policies",
+        "source": "employee-handbook.md",
+        "text": "Employees may work remotely up to three days per week...",
+        "version": 1,
+        "chunk_index": 0
+      }
+    ],
+    "total_found": 1,
+    "duration_ms": 42
+  }
+  ```
+
