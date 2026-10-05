@@ -198,9 +198,35 @@ export async function executeChatStep(
         },
       };
     }
+
+    // Default for external queries: propose web_search
+    let searchCleaned = userMessage?.content || "latest technology updates";
+    searchCleaned = searchCleaned.replace(/^(search for|find|search the web for|look up|search)\s+/i, "").trim();
+
+    return {
+      content: null,
+      toolCall: {
+        tool: "web_search",
+        arguments: {
+          query: searchCleaned.substring(0, 100) || "latest AI news",
+          max_results: 5,
+        },
+        toolCallId: "sim_call_search_1",
+      },
+      telemetry: {
+        provider: `${provider}-simulation`,
+        model,
+        inputTokens,
+        outputTokens: 30,
+        totalTokens: inputTokens + 30,
+        latencyMs: elapsed,
+        estimatedCostUsd: calculateCostUsd(inputTokens, 30),
+        status: "SUCCESS",
+      },
+    };
   }
 
-  // Scenario B: Observation received -> Synthesize final answer
+  // Scenario B: Observation received -> Synthesize final answer with source attribution
   if (hasToolObservation) {
     const observationMessage = messages.find((m) => m.role === "tool");
     let answer = "Tool execution succeeded.";
@@ -212,6 +238,20 @@ export async function executeChatStep(
           answer = `It is currently ${obs.data.formatted} (Timezone: ${obs.data.timezone}).`;
         } else if (obs.tool === "calculate" && obs.success) {
           answer = `The calculated result for expression '${obs.data.expression}' is ${obs.data.result}.`;
+        } else if (obs.tool === "web_search" && obs.success) {
+          const results = obs.data.results || [];
+          if (results.length > 0) {
+            const summaryPoints = results
+              .map((r: any) => `• ${r.title}\n  ${r.snippet}`)
+              .join("\n\n");
+            const sourcesList = results
+              .map((r: any, idx: number) => `[${idx + 1}] ${r.title} — ${r.url}`)
+              .join("\n");
+
+            answer = `Based on verified web search observations for '${obs.data.query}':\n\n${summaryPoints}\n\n**Sources & Attribution:**\n${sourcesList}`;
+          } else {
+            answer = `Web search query '${obs.data.query}' completed, but returned no matching public records.`;
+          }
         } else if (!obs.success) {
           answer = `Tool execution failed: ${obs.error?.message || "Unknown error"}`;
         }
