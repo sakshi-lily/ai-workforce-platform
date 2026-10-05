@@ -83,6 +83,59 @@ interface TelemetryRecord {
   created_at: string;
 }
 
+// Phase 7 - Simple Agent Types
+interface AgentPlanStep {
+  order: number;
+  title?: string;
+  description: string;
+}
+
+interface AgentPlan {
+  goal: string;
+  summary: string;
+  steps: AgentPlanStep[];
+}
+
+interface AgentTimelineEvent {
+  state: string;
+  timestamp: string;
+  details?: string;
+}
+
+interface AgentExecutionResult {
+  taskId: string;
+  status: string;
+  cycles: number;
+  latencyMs: number;
+  plan: AgentPlan | null;
+  steps: Array<{
+    id: string;
+    step_order: number;
+    title: string;
+    description: string;
+    status: string;
+  }>;
+  telemetry: {
+    model: string;
+    totalTokens: number;
+    estimatedCostUsd: number;
+  } | null;
+  timeline: AgentTimelineEvent[];
+  error?: string;
+}
+
+interface AgentTaskSummary {
+  id: string;
+  title: string;
+  prompt: string;
+  status: string;
+  priority: string;
+  stepCount: number;
+  totalCostUsd: number;
+  createdAt: string;
+  completedAt: string | null;
+}
+
 export default function App() {
   // Layer 1: Express Health
   const [backendStatus, setBackendStatus] = useState<HealthStatus>('idle');
@@ -137,10 +190,16 @@ export default function App() {
   const [aiStructuredResult, setAiStructuredResult] = useState<StructuredOutput | null>(null);
   const [aiTelemetry, setAiTelemetry] = useState<AITelemetry | null>(null);
   const [aiExecutionError, setAiExecutionError] = useState<string | null>(null);
-
-  // Telemetry History state (from MySQL)
   const [telemetryHistory, setTelemetryHistory] = useState<TelemetryRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState<boolean>(false);
+
+  // Phase 7: Simple Agent state
+  const [agentTaskPrompt, setAgentTaskPrompt] = useState<string>('Find potential customers for our AI automation product.');
+  const [agentLoading, setAgentLoading] = useState<boolean>(false);
+  const [agentResult, setAgentResult] = useState<AgentExecutionResult | null>(null);
+  const [agentError, setAgentError] = useState<string | null>(null);
+  const [agentTasks, setAgentTasks] = useState<AgentTaskSummary[]>([]);
+  const [agentTasksLoading, setAgentTasksLoading] = useState<boolean>(false);
 
   // 1. Check Express Process Health
   const checkBackend = async () => {
@@ -202,7 +261,7 @@ export default function App() {
     }
   };
 
-  // 4. Check AI / LLM Provider Health (Lightweight config verification)
+  // 4. Check AI / LLM Provider Health
   const checkAiHealth = async () => {
     setAiStatus('loading');
     setAiError(null);
@@ -322,7 +381,7 @@ export default function App() {
       const json = await res.json();
       setTelemetryHistory(json.data || []);
     } catch {
-      // Telemetry fetch error non-blocking
+      // Telemetry fetch non-blocking
     } finally {
       setHistoryLoading(false);
     }
@@ -361,8 +420,6 @@ export default function App() {
         setAiStructuredResult(json.output);
       }
       setAiTelemetry(json.telemetry);
-
-      // Refresh persisted telemetry table
       fetchTelemetryHistory();
     } catch (err: unknown) {
       setAiExecutionError(err instanceof Error ? err.message : 'An error occurred during AI execution.');
@@ -371,7 +428,88 @@ export default function App() {
     }
   };
 
-  // Run all health checks & initial fetch on mount
+  // 10. Phase 7: Fetch Agent Tasks from MySQL
+  const fetchAgentTasks = async () => {
+    setAgentTasksLoading(true);
+    try {
+      const res = await fetch('http://localhost:3000/api/agent/tasks?limit=10');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      setAgentTasks(json.data || []);
+    } catch {
+      // Task history fetch non-blocking
+    } finally {
+      setAgentTasksLoading(false);
+    }
+  };
+
+  // 11. Phase 7: Execute Simple Agent Task
+  const handleRunAgent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!agentTaskPrompt.trim()) return;
+
+    setAgentLoading(true);
+    setAgentError(null);
+    setAgentResult(null);
+
+    try {
+      const res = await fetch('http://localhost:3000/api/agent/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task: agentTaskPrompt.trim(),
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok) {
+        if (json.data) {
+          // Execution completed with FAILED state
+          setAgentResult(json.data);
+        }
+        throw new Error(json.error?.message || json.message || `Agent execution failed (HTTP ${res.status})`);
+      }
+
+      setAgentResult(json.data);
+      fetchAgentTasks();
+      fetchTelemetryHistory();
+    } catch (err: unknown) {
+      setAgentError(err instanceof Error ? err.message : 'Agent execution failed');
+    } finally {
+      setAgentLoading(false);
+    }
+  };
+
+  // 12. Phase 7: Load Agent Task from History
+  const loadTaskDetails = async (taskId: string) => {
+    try {
+      const res = await fetch(`http://localhost:3000/api/agent/tasks/${taskId}`);
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.data) {
+        setAgentResult({
+          taskId: json.data.task.id,
+          status: json.data.task.status,
+          cycles: 1,
+          latencyMs: json.data.telemetry?.latencyMs || 0,
+          plan: json.data.plan,
+          steps: json.data.steps,
+          telemetry: json.data.telemetry,
+          timeline: [
+            { state: 'REQUESTED', timestamp: json.data.task.created_at, details: 'Created' },
+            { state: 'RUNNING', timestamp: json.data.task.started_at || json.data.task.created_at, details: 'Host started' },
+            { state: 'COMPLETED', timestamp: json.data.task.completed_at || json.data.task.updated_at, details: 'Finished' },
+          ],
+        });
+        setAgentTaskPrompt(json.data.task.prompt);
+      }
+    } catch {
+      // Non-blocking
+    }
+  };
+
+  // Mount effects
   useEffect(() => {
     checkBackend();
     checkDb();
@@ -379,15 +517,16 @@ export default function App() {
     checkAiHealth();
     fetchCustomers();
     fetchTelemetryHistory();
+    fetchAgentTasks();
   }, []);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-8 font-sans selection:bg-rose-500 selection:text-white">
       {/* Background ambient lighting */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-        <div className="absolute -top-40 -left-40 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl"></div>
+        <div className="absolute -top-40 -left-40 w-96 h-96 bg-cyan-600/10 rounded-full blur-3xl"></div>
         <div className="absolute top-1/3 -right-40 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl"></div>
-        <div className="absolute bottom-10 left-1/3 w-80 h-80 bg-rose-600/10 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-10 left-1/3 w-80 h-80 bg-purple-600/10 rounded-full blur-3xl"></div>
       </div>
 
       <div className="relative z-10 max-w-5xl w-full mx-auto space-y-8">
@@ -396,24 +535,27 @@ export default function App() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-3">
-                <span className="inline-block w-3 h-3 rounded-full bg-purple-500 animate-pulse"></span>
+                <span className="inline-block w-3 h-3 rounded-full bg-cyan-400 animate-pulse"></span>
                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
                   AI Workforce Platform
                 </h1>
               </div>
               <p className="mt-1 text-sm text-slate-400">
-                Phase 6 — AI / LLM Integration (Controlled LLM Layer, Runtime Validation & Durably Persisted Telemetry)
+                Phase 7 — Simple Agent (Bounded Autonomous Planning, State Machine & Watchdog Governance)
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <span className="px-3 py-1 text-xs font-medium rounded-full bg-cyan-950/80 border border-cyan-500/30 text-cyan-300">
+                Host State Machine
+              </span>
               <span className="px-3 py-1 text-xs font-medium rounded-full bg-purple-950/80 border border-purple-500/30 text-purple-300">
-                OpenAI Adapter
+                OpenAI Provider
               </span>
               <span className="px-3 py-1 text-xs font-medium rounded-full bg-rose-950/80 border border-rose-500/30 text-rose-300">
                 Redis 8.10 Cache
               </span>
               <span className="px-3 py-1 text-xs font-medium rounded-full bg-emerald-950/80 border border-emerald-500/30 text-emerald-300">
-                MySQL 8.4 Telemetry
+                MySQL 8.4 Truth
               </span>
             </div>
           </div>
@@ -579,7 +721,283 @@ export default function App() {
           </div>
         </section>
 
-        {/* Section 2: AI Playground (The Milestone 6.11 / Scenario 60 Vertical Slice) */}
+        {/* Section 2: Phase 7 — Simple Agent Studio (Bounded Autonomous Planning) */}
+        <section className="bg-slate-900/60 backdrop-blur-md rounded-2xl border border-cyan-900/40 p-6 sm:p-8 shadow-2xl space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            <div>
+              <div className="flex items-center gap-3">
+                <span className="p-2 rounded-xl bg-cyan-950/80 border border-cyan-500/40 text-cyan-300">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                </span>
+                <div>
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    Simple Agent Execution Studio
+                    <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-700/50 text-cyan-300">
+                      Phase 7
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Host-controlled state machine: <code className="text-cyan-300 font-mono">REQUESTED → RUNNING → LLM_CALL → VALIDATING → COMPLETED</code>
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-400">
+                Watchdog: <strong className="text-cyan-300">10 Cycles / 180s</strong>
+              </span>
+            </div>
+          </div>
+
+          {/* Quick Presets */}
+          <div className="space-y-1.5">
+            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Agent Planning Presets:</span>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setAgentTaskPrompt('Find potential customers for our AI automation product.')}
+                className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
+              >
+                Customer Discovery Plan
+              </button>
+              <button
+                type="button"
+                onClick={() => setAgentTaskPrompt('Analyze inbound enterprise healthcare leads and establish compliance qualification workflow.')}
+                className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
+              >
+                Healthcare ICP Qualification
+              </button>
+              <button
+                type="button"
+                onClick={() => setAgentTaskPrompt('Plan automated database synchronization audit and reconciliation between MySQL and Redis.')}
+                className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
+              >
+                Database Audit Plan
+              </button>
+            </div>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={handleRunAgent} className="space-y-3">
+            <textarea
+              rows={3}
+              required
+              value={agentTaskPrompt}
+              onChange={(e) => setAgentTaskPrompt(e.target.value)}
+              placeholder="Enter high-level user instruction for the Simple Agent..."
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono resize-y"
+            />
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-[11px] text-slate-500">
+                Endpoint: <code className="text-cyan-400 font-mono">POST /api/agent/tasks</code>
+              </div>
+              <button
+                type="submit"
+                id="run-agent-btn"
+                disabled={agentLoading || !agentTaskPrompt.trim()}
+                className="px-6 py-2.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white shadow-lg shadow-cyan-950 transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
+              >
+                {agentLoading ? (
+                  <>
+                    <svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                    </svg>
+                    <span>Executing Agent Cycle...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    <span>Run Agent</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+
+          {/* Error Banner */}
+          {agentError && (
+            <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs flex items-start gap-2.5">
+              <svg className="w-4 h-4 text-rose-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div>
+                <strong>Execution Halt:</strong> {agentError}
+              </div>
+            </div>
+          )}
+
+          {/* Active Agent Output & Timeline */}
+          {agentResult && (
+            <div className="space-y-5 pt-2 border-t border-slate-800">
+              {/* Telemetry & State Bar */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-3.5 rounded-xl bg-slate-950 border border-cyan-900/40 text-xs font-mono">
+                <div>
+                  <span className="text-[10px] text-slate-500 block uppercase">Task Status</span>
+                  <span className={`font-semibold inline-flex items-center gap-1.5 ${agentResult.status === 'COMPLETED' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <span className={`w-2 h-2 rounded-full ${agentResult.status === 'COMPLETED' ? 'bg-emerald-400' : 'bg-rose-400'}`}></span>
+                    {agentResult.status}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block uppercase">Cycle Watchdog</span>
+                  <span className="font-semibold text-cyan-300">{agentResult.cycles} / 10 MAX</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block uppercase">Latency</span>
+                  <span className="font-semibold text-white">{agentResult.latencyMs} ms</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block uppercase">Total Tokens</span>
+                  <span className="font-semibold text-purple-300">{agentResult.telemetry?.totalTokens ?? 0}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block uppercase">Est. Cost</span>
+                  <span className="font-semibold text-amber-300">${(agentResult.telemetry?.estimatedCostUsd ?? 0).toFixed(6)}</span>
+                </div>
+              </div>
+
+              {/* State Machine Timeline HUD */}
+              <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block">Host Execution Lifecycle Timeline</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  {agentResult.timeline.map((event, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <span className={`px-2.5 py-1 rounded-lg text-xs font-mono font-medium flex items-center gap-1.5 ${
+                        event.state === 'COMPLETED'
+                          ? 'bg-emerald-950 border border-emerald-700/50 text-emerald-300'
+                          : event.state === 'FAILED'
+                          ? 'bg-rose-950 border border-rose-700/50 text-rose-300'
+                          : 'bg-slate-900 border border-slate-800 text-cyan-300'
+                      }`}>
+                        <span>✓</span>
+                        <span>{event.state}</span>
+                      </span>
+                      {idx < agentResult.timeline.length - 1 && (
+                        <span className="text-slate-600 font-mono text-xs">→</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Generated Plan & Steps Display */}
+              {agentResult.plan && (
+                <div className="space-y-4">
+                  {/* Goal & Summary */}
+                  <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] uppercase font-mono text-cyan-400 font-semibold">Planned Goal</span>
+                      <span className="text-[10px] font-mono text-slate-500">Task ID: {agentResult.taskId.substring(0, 8)}...</span>
+                    </div>
+                    <h3 className="text-sm font-semibold text-white">{agentResult.plan.goal}</h3>
+                    <p className="text-xs text-slate-300 leading-relaxed">{agentResult.plan.summary}</p>
+                  </div>
+
+                  {/* Planned Steps List */}
+                  <div className="space-y-2">
+                    <span className="text-xs font-semibold text-slate-200">
+                      Planned Steps ({agentResult.steps.length} durably persisted in MySQL <code className="text-cyan-300 font-mono text-[11px]">task_steps</code>)
+                    </span>
+                    <div className="space-y-2">
+                      {agentResult.steps.map((s) => (
+                        <div key={s.id} className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-start justify-between gap-4 hover:border-cyan-900/50 transition-colors">
+                          <div className="flex items-start gap-3">
+                            <span className="px-2 py-0.5 rounded-md bg-cyan-950 border border-cyan-700/40 text-cyan-300 font-mono font-bold text-xs shrink-0">
+                              #{s.step_order}
+                            </span>
+                            <div>
+                              <h4 className="text-xs font-semibold text-white">{s.title}</h4>
+                              <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">{s.description}</p>
+                            </div>
+                          </div>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-900 text-amber-300 border border-slate-800 shrink-0">
+                            {s.status} (Phase 8 Tool-Ready)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Recent Agent Tasks Log */}
+          <div className="space-y-3 pt-3 border-t border-slate-800">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-300">Durable Agent Task Log (MySQL tasks)</span>
+              <button
+                type="button"
+                onClick={fetchAgentTasks}
+                disabled={agentTasksLoading}
+                className="text-[11px] px-2.5 py-1 rounded bg-slate-950 border border-slate-800 hover:bg-slate-900 text-slate-300 transition-colors cursor-pointer"
+              >
+                {agentTasksLoading ? 'Refreshing...' : 'Refresh History'}
+              </button>
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 bg-slate-900/60 text-slate-400 font-mono text-[11px]">
+                    <th className="p-3">Task ID</th>
+                    <th className="p-3">Task Prompt</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Steps</th>
+                    <th className="p-3">Cost (USD)</th>
+                    <th className="p-3">Timestamp</th>
+                    <th className="p-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                  {agentTasks.map((t) => (
+                    <tr key={t.id} className="hover:bg-slate-900/40 transition-colors">
+                      <td className="p-3 text-slate-400">{t.id.substring(0, 8)}...</td>
+                      <td className="p-3 font-sans text-slate-200 max-w-xs truncate">{t.prompt}</td>
+                      <td className="p-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                          t.status === 'COMPLETED'
+                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/50'
+                            : 'bg-rose-950 text-rose-300 border border-rose-800/50'
+                        }`}>
+                          {t.status}
+                        </span>
+                      </td>
+                      <td className="p-3 text-cyan-300">{t.stepCount}</td>
+                      <td className="p-3 text-amber-300">${t.totalCostUsd.toFixed(4)}</td>
+                      <td className="p-3 font-sans text-slate-500 text-[11px]">{new Date(t.createdAt).toLocaleTimeString()}</td>
+                      <td className="p-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => loadTaskDetails(t.id)}
+                          className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] font-sans transition-colors cursor-pointer"
+                        >
+                          View Plan
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {agentTasks.length === 0 && !agentTasksLoading && (
+                    <tr>
+                      <td colSpan={7} className="p-4 text-center text-slate-500 font-sans">
+                        No agent tasks executed yet. Run a prompt above!
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        {/* Section 3: AI Playground & Execution Pipeline (Preserved from Phase 6) */}
         <section className="bg-slate-900/60 backdrop-blur-md rounded-2xl border border-slate-800 p-6 sm:p-8 shadow-xl space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
             <div>
@@ -589,22 +1007,19 @@ export default function App() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 </span>
-                <h2 className="text-lg font-semibold text-white">AI Playground & Execution Pipeline</h2>
+                <h2 className="text-lg font-semibold text-white">AI Playground & Single-Step Pipeline (Phase 6)</h2>
               </div>
               <p className="text-xs text-slate-400 mt-1">
-                Backend-controlled LLM invocation with strict input validation, system message boundaries, runtime Zod validation, and durable MySQL telemetry.
+                Direct single-step LLM invocation with strict input validation, system message boundaries, and runtime Zod validation.
               </p>
             </div>
 
-            {/* Mode Selector */}
             <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800">
               <button
                 type="button"
                 onClick={() => setAiMode('generate')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                  aiMode === 'generate'
-                    ? 'bg-purple-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
+                  aiMode === 'generate' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 Free-form Text
@@ -613,9 +1028,7 @@ export default function App() {
                 type="button"
                 onClick={() => setAiMode('summarize')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                  aiMode === 'summarize'
-                    ? 'bg-purple-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
+                  aiMode === 'summarize' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 Structured Analysis
@@ -623,256 +1036,96 @@ export default function App() {
             </div>
           </div>
 
-          {/* Quick Preset Prompts */}
-          <div className="space-y-2">
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Quick Presets:</span>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setAiMode('generate');
-                  setAiPrompt('Explain why Redis should not replace MySQL in our platform.');
-                }}
-                className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-purple-500/50 text-slate-300 transition-colors cursor-pointer"
-              >
-                Redis vs MySQL Architecture
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAiMode('summarize');
-                  setAiPrompt('Acme Health Systems is a 1,200-employee regional hospital network evaluating automated customer outreach and patient intake reconciliation.');
-                }}
-                className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-purple-500/50 text-slate-300 transition-colors cursor-pointer"
-              >
-                Structured Healthcare Lead
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAiMode('generate');
-                  setAiPrompt('Explain what an AI agent is in one concise sentence.');
-                }}
-                className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-purple-500/50 text-slate-300 transition-colors cursor-pointer"
-              >
-                AI Agent Definition
-              </button>
-            </div>
-          </div>
-
-          {/* Input Form */}
           <form onSubmit={handleExecuteAi} className="space-y-3">
-            <div className="relative">
-              <textarea
-                rows={3}
-                required
-                value={aiPrompt}
-                onChange={(e) => setAiPrompt(e.target.value)}
-                placeholder={aiMode === 'generate' ? 'Enter a prompt for the LLM...' : 'Enter customer or business text for structured Zod analysis...'}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500 font-mono resize-y"
-              />
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-[11px] text-slate-500">
-                Target endpoint: <code className="text-purple-400 font-mono">POST /api/ai/{aiMode}</code>
-              </div>
+            <textarea
+              rows={2}
+              required
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              placeholder="Enter prompt for direct LLM generation..."
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500 font-mono resize-y"
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">Endpoint: POST /api/ai/{aiMode}</span>
               <button
                 type="submit"
-                id="execute-ai-btn"
                 disabled={aiLoading || !aiPrompt.trim()}
-                className="px-5 py-2.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-lg shadow-purple-950 transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-purple-700 hover:bg-purple-600 text-white transition-all cursor-pointer disabled:opacity-50"
               >
-                {aiLoading ? (
-                  <>
-                    <svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-                    </svg>
-                    <span>Executing via LLM...</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                    </svg>
-                    <span>Run {aiMode === 'generate' ? 'Generation' : 'Structured Analysis'}</span>
-                  </>
-                )}
+                {aiLoading ? 'Generating...' : `Run ${aiMode === 'generate' ? 'Generation' : 'Structured Analysis'}`}
               </button>
             </div>
           </form>
 
-          {/* Error Banner */}
           {aiExecutionError && (
-            <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs flex items-start gap-2.5">
-              <svg className="w-4 h-4 text-rose-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <div>
-                <strong>Execution Error:</strong> {aiExecutionError}
-              </div>
+            <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs">
+              {aiExecutionError}
+            </div>
+          )}
+
+          {(aiResultText || aiStructuredResult) && (
+            <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800 text-xs space-y-2">
+              <div className="text-[10px] uppercase font-mono text-purple-400 font-semibold">LLM Output</div>
+              {aiResultText && <p className="text-slate-200 leading-relaxed whitespace-pre-wrap">{aiResultText}</p>}
+              {aiStructuredResult && (
+                <div className="space-y-2">
+                  <p className="text-slate-200 font-medium">{aiStructuredResult.summary}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {aiStructuredResult.topics.map((t, idx) => (
+                      <span key={idx} className="px-2 py-0.5 rounded bg-slate-900 text-purple-300 text-[10px] font-mono">#{t}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {/* AI Telemetry HUD */}
           {aiTelemetry && (
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-3.5 rounded-xl bg-slate-950 border border-purple-900/40 text-xs font-mono">
-              <div>
-                <span className="text-[10px] text-slate-500 block uppercase">Provider/Model</span>
-                <span className="font-semibold text-purple-300">{aiTelemetry.model}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-500 block uppercase">Status</span>
-                <span className="inline-flex items-center gap-1 font-semibold text-emerald-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                  {aiTelemetry.status}
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-500 block uppercase">Latency</span>
-                <span className="font-semibold text-white">{aiTelemetry.latencyMs} ms</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-500 block uppercase">Tokens (In / Out / Tot)</span>
-                <span className="font-semibold text-cyan-300">
-                  {aiTelemetry.inputTokens} / {aiTelemetry.outputTokens} / {aiTelemetry.totalTokens}
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-500 block uppercase">Est. Cost</span>
-                <span className="font-semibold text-amber-300">${aiTelemetry.estimatedCostUsd.toFixed(6)}</span>
-              </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 rounded-lg bg-slate-950 border border-purple-900/40 text-[11px] font-mono">
+              <div><span className="text-slate-500 block uppercase">Model</span><span className="text-purple-300 font-semibold">{aiTelemetry.model}</span></div>
+              <div><span className="text-slate-500 block uppercase">Tokens</span><span className="text-cyan-300 font-semibold">{aiTelemetry.totalTokens}</span></div>
+              <div><span className="text-slate-500 block uppercase">Latency</span><span className="text-white font-semibold">{aiTelemetry.latencyMs}ms</span></div>
+              <div><span className="text-slate-500 block uppercase">Est. Cost</span><span className="text-amber-300 font-semibold">${aiTelemetry.estimatedCostUsd.toFixed(6)}</span></div>
             </div>
           )}
 
-          {/* AI Output Display Area */}
-          {(aiResultText || aiStructuredResult) && (
-            <div className="space-y-3">
+          {/* Telemetry Log */}
+          {telemetryHistory.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-slate-800/80">
               <div className="flex items-center justify-between text-xs text-slate-400">
-                <span className="font-medium text-slate-300">
-                  {aiMode === 'generate' ? 'Free-form Output' : 'Validated Structured Intelligence (Zod Schema Verified)'}
-                </span>
-                <span className="text-[10px] text-emerald-400 font-mono">Status: COMPLETED</span>
+                <span>Persisted Telemetry Logs ({telemetryHistory.length})</span>
+                <button type="button" onClick={fetchTelemetryHistory} disabled={historyLoading} className="text-[10px] text-purple-400 hover:text-purple-300 cursor-pointer">Refresh</button>
               </div>
-
-              {aiResultText && (
-                <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800 text-xs text-slate-200 leading-relaxed font-sans shadow-inner whitespace-pre-wrap">
-                  {aiResultText}
-                </div>
-              )}
-
-              {aiStructuredResult && (
-                <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800 space-y-4 shadow-inner">
-                  {/* Summary & Sentiment */}
-                  <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-800/80 pb-3">
-                    <p className="text-xs text-slate-200 flex-1 leading-relaxed font-medium">
-                      {aiStructuredResult.summary}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-700/50 text-emerald-300 font-semibold">
-                        {aiStructuredResult.sentiment}
-                      </span>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-950 border border-indigo-700/50 text-indigo-300">
-                        Confidence: {(aiStructuredResult.confidence * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Topics Tags */}
-                  <div>
-                    <span className="text-[10px] uppercase font-mono text-slate-500 block mb-1.5">Classified Topics</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {aiStructuredResult.topics.map((t, idx) => (
-                        <span key={idx} className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-purple-300 text-[11px] font-mono">
-                          #{t}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Key Insights */}
-                  <div>
-                    <span className="text-[10px] uppercase font-mono text-slate-500 block mb-1.5">Key Insights</span>
-                    <ul className="list-disc list-inside text-xs text-slate-300 space-y-1">
-                      {aiStructuredResult.keyInsights.map((insight, idx) => (
-                        <li key={idx} className="leading-relaxed">
-                          {insight}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
+              <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950/60">
+                <table className="w-full text-left text-[11px] font-mono">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-500">
+                      <th className="p-2">ID</th>
+                      <th className="p-2">Model</th>
+                      <th className="p-2">Tokens</th>
+                      <th className="p-2">Latency</th>
+                      <th className="p-2">Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/40">
+                    {telemetryHistory.slice(0, 3).map((t) => (
+                      <tr key={t.id} className="hover:bg-slate-900/40">
+                        <td className="p-2 text-slate-400">{t.id.substring(0, 8)}...</td>
+                        <td className="p-2 text-slate-300">{t.model}</td>
+                        <td className="p-2 text-cyan-300">{t.total_tokens}</td>
+                        <td className="p-2 text-white">{t.latency_ms}ms</td>
+                        <td className="p-2 text-amber-300">${parseFloat(t.estimated_cost_usd).toFixed(6)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </section>
 
-        {/* Section 3: Durable AI Telemetry History (MySQL ai_telemetry Table) */}
-        <section className="bg-slate-900/60 backdrop-blur-md rounded-2xl border border-slate-800 p-6 sm:p-8 shadow-xl space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <div>
-              <h2 className="text-base font-semibold text-white">Durable AI Telemetry Log</h2>
-              <p className="text-xs text-slate-400">Persisted in MySQL <code className="text-emerald-400 font-mono">ai_telemetry</code> table for cost audit and usage governance.</p>
-            </div>
-            <button
-              type="button"
-              onClick={fetchTelemetryHistory}
-              disabled={historyLoading}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors cursor-pointer"
-            >
-              {historyLoading ? 'Refreshing...' : 'Refresh Logs'}
-            </button>
-          </div>
-
-          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-800 bg-slate-900/60 text-slate-400 font-mono text-[11px]">
-                  <th className="p-3">Execution ID</th>
-                  <th className="p-3">Type</th>
-                  <th className="p-3">Model</th>
-                  <th className="p-3">Tokens</th>
-                  <th className="p-3">Latency</th>
-                  <th className="p-3">Cost (USD)</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Timestamp</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
-                {telemetryHistory.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-900/40 transition-colors">
-                    <td className="p-3 text-slate-400">{row.id.substring(0, 8)}...</td>
-                    <td className="p-3">
-                      <span className="px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-purple-300">
-                        {row.prompt_type}
-                      </span>
-                    </td>
-                    <td className="p-3 text-slate-300">{row.model}</td>
-                    <td className="p-3 text-cyan-300">{row.total_tokens}</td>
-                    <td className="p-3 text-white">{row.latency_ms} ms</td>
-                    <td className="p-3 text-amber-300">${parseFloat(row.estimated_cost_usd).toFixed(6)}</td>
-                    <td className="p-3">
-                      <span className="text-emerald-400 font-semibold">{row.status}</span>
-                    </td>
-                    <td className="p-3 text-slate-500 font-sans text-[11px]">
-                      {new Date(row.created_at).toLocaleTimeString()}
-                    </td>
-                  </tr>
-                ))}
-                {telemetryHistory.length === 0 && !historyLoading && (
-                  <tr>
-                    <td colSpan={8} className="p-6 text-center text-slate-500 font-sans">
-                      No AI telemetry executions recorded yet. Run a prompt in the AI Playground above!
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        {/* Section 4: Cache-Aside Customer Explorer (Preserved from Phase 5) */}
+        {/* Section 4: Cache-Aside Customer Explorer (Phase 5) */}
         <section className="bg-slate-900/60 backdrop-blur-md rounded-2xl border border-slate-800 p-6 sm:p-8 shadow-xl space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
             <div>
@@ -964,7 +1217,6 @@ export default function App() {
                     </span>
                   </div>
                   <div className="text-slate-400 text-[11px]">Domain: <span className="font-mono text-indigo-300">{searchResult.domain}</span> &bull; Industry: {searchResult.industry || 'N/A'}</div>
-                  <div className="text-slate-400 text-[11px]">Status: <span className="text-emerald-400 font-medium">{searchResult.status}</span> &bull; Score: {searchResult.qualification_score ?? 'N/A'}</div>
                 </div>
               )}
             </div>
@@ -1052,43 +1304,17 @@ export default function App() {
                       <td className="p-3 font-mono text-indigo-300">{c.domain}</td>
                       <td className="p-3 text-slate-400">{c.industry || '—'}</td>
                       <td className="p-3">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                            c.status === 'QUALIFIED'
-                              ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/30'
-                              : c.status === 'CONTACTED'
-                              ? 'bg-amber-950/80 text-amber-300 border border-amber-600/30'
-                              : 'bg-slate-800 text-slate-300 border border-slate-700'
-                          }`}
-                        >
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-300">
                           {c.status}
                         </span>
                       </td>
-                      <td className="p-3">
-                        {c.qualification_score !== null ? (
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-slate-200">{c.qualification_score}</span>
-                            <div className="w-12 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-emerald-500 rounded-full"
-                                style={{ width: `${Math.min(c.qualification_score, 100)}%` }}
-                              ></div>
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-slate-600">—</span>
-                        )}
-                      </td>
-                      <td className="p-3 text-slate-500 text-[11px]">
-                        {new Date(c.created_at).toLocaleDateString()}
-                      </td>
+                      <td className="p-3">{c.qualification_score ?? '—'}</td>
+                      <td className="p-3 text-slate-500 text-[11px]">{new Date(c.created_at).toLocaleDateString()}</td>
                     </tr>
                   ))}
                   {customers.length === 0 && !customersLoading && (
                     <tr>
-                      <td colSpan={6} className="p-6 text-center text-slate-500">
-                        No customer records found. Click "Refresh Customers" or add one using the form above.
-                      </td>
+                      <td colSpan={6} className="p-4 text-center text-slate-500">No records found.</td>
                     </tr>
                   )}
                 </tbody>
@@ -1100,33 +1326,33 @@ export default function App() {
         {/* Section 5: Architecture Diagram */}
         <section className="bg-slate-900/40 rounded-2xl border border-slate-800/80 p-6 sm:p-8">
           <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-4">
-            Phase 6 AI Workforce Architecture Pipeline
+            Phase 7 Agent Host Architecture Pipeline
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-center">
             <div className="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
-              <span className="text-[10px] font-mono text-indigo-400 mb-1">CLIENT UI</span>
+              <span className="text-[10px] font-mono text-cyan-400 mb-1">CLIENT UI</span>
               <span className="font-semibold text-xs text-slate-200">React + Vite</span>
               <span className="text-[11px] text-slate-500 mt-1">Port 5173</span>
-              <div className="mt-2 text-[10px] text-indigo-300 bg-indigo-950/50 border border-indigo-800/50 px-2 py-0.5 rounded">
-                AI Playground
+              <div className="mt-2 text-[10px] text-cyan-300 bg-cyan-950/50 border border-cyan-800/50 px-2 py-0.5 rounded">
+                Simple Agent Studio
               </div>
             </div>
 
             <div className="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
-              <span className="text-[10px] font-mono text-cyan-400 mb-1">ROUTER / GATEWAY</span>
+              <span className="text-[10px] font-mono text-indigo-400 mb-1">GATEWAY</span>
               <span className="font-semibold text-xs text-slate-200">Express API</span>
               <span className="text-[11px] text-slate-500 mt-1">Port 3000</span>
-              <div className="mt-2 text-[10px] text-cyan-300 bg-cyan-950/50 border border-cyan-800/50 px-2 py-0.5 rounded">
-                POST /api/ai/*
+              <div className="mt-2 text-[10px] text-indigo-300 bg-indigo-950/50 border border-indigo-800/50 px-2 py-0.5 rounded">
+                POST /api/agent/tasks
               </div>
             </div>
 
             <div className="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
-              <span className="text-[10px] font-mono text-purple-400 mb-1">AI SERVICE</span>
-              <span className="font-semibold text-xs text-slate-200">LLM Service</span>
-              <span className="text-[11px] text-slate-500 mt-1">Zod Validation</span>
+              <span className="text-[10px] font-mono text-purple-400 mb-1">AGENT HOST</span>
+              <span className="font-semibold text-xs text-slate-200">State & Loop</span>
+              <span className="text-[11px] text-slate-500 mt-1">10 Cycles / 180s Watchdogs</span>
               <div className="mt-2 text-[10px] text-purple-300 bg-purple-950/50 border border-purple-800/50 px-2 py-0.5 rounded font-mono">
-                Untrusted Output Filter
+                Zod Plan Validation
               </div>
             </div>
 
@@ -1135,16 +1361,16 @@ export default function App() {
               <span className="font-semibold text-xs text-slate-200">Redis 8.10</span>
               <span className="text-[11px] text-slate-500 mt-1">Port 6379</span>
               <div className="mt-2 text-[10px] text-rose-300 bg-rose-950/50 border border-rose-800/50 px-2 py-0.5 rounded font-mono">
-                Speed Optimization
+                Optimization Layer
               </div>
             </div>
 
             <div className="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
               <span className="text-[10px] font-mono text-emerald-400 mb-1">DURABLE TRUTH</span>
               <span className="font-semibold text-xs text-slate-200">MySQL 8.4</span>
-              <span className="text-[11px] text-slate-500 mt-1">Port 3306</span>
+              <span className="text-[11px] text-slate-500 mt-1">tasks & task_steps</span>
               <div className="mt-2 text-[10px] text-emerald-300 bg-emerald-950/50 border border-emerald-800/50 px-2 py-0.5 rounded font-mono">
-                ai_telemetry Table
+                Authoritative State
               </div>
             </div>
           </div>
@@ -1152,7 +1378,7 @@ export default function App() {
 
         {/* Footer */}
         <footer className="text-center text-xs text-slate-500 pt-4 border-t border-slate-800/80">
-          AI Workforce Platform &bull; Phase 6: AI / LLM Integration Complete &bull; Ready for Phase 7: Simple Agent
+          AI Workforce Platform &bull; Phase 7: Simple Agent Complete &bull; Ready for Phase 8: Tool Calling
         </footer>
       </div>
     </div>
