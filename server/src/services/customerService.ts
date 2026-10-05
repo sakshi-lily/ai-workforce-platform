@@ -34,7 +34,7 @@ export interface QueryResult<T> {
   latencyMs: number;
 }
 
-const DEFAULT_DEMO_USER_ID = "usr_phase4_seed_001";
+export const DEFAULT_DEMO_USER_ID = "usr_phase4_seed_001";
 
 /**
  * Ensures a default workspace user and initial seed customers exist
@@ -253,3 +253,66 @@ export async function createCustomer(input: CreateCustomerInput): Promise<Custom
   }
   return result.data;
 }
+
+export interface CustomerVerificationRecord {
+  id: string;
+  company_name: string;
+  domain: string;
+  contact_name: string | null;
+  contact_email: string | null;
+  industry: string | null;
+  qualification_score: number | null;
+  status: "NEW" | "QUALIFIED" | "CONTACTED" | "DISQUALIFIED" | "CUSTOMER";
+  created_at: string;
+}
+
+export interface CustomerVerificationResult {
+  found: boolean;
+  customer: CustomerVerificationRecord | null;
+}
+
+/**
+ * Phase 10: Server-owned, parameterized customer verification by email.
+ * Ensures strict tenant isolation and data minimization.
+ * Never allows arbitrary SQL or query manipulation.
+ */
+export async function verifyCustomerByEmail(
+  email: string,
+  userId: string = DEFAULT_DEMO_USER_ID
+): Promise<CustomerVerificationResult> {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  // Parameterized query scoped to tenant (user_id)
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT id, company_name, domain, contact_name, contact_email, 
+            industry, qualification_score, status, created_at
+     FROM customers
+     WHERE LOWER(contact_email) = ? AND user_id = ?
+     LIMIT 1;`,
+    [normalizedEmail, userId]
+  );
+
+  if (rows.length === 0) {
+    return {
+      found: false,
+      customer: null,
+    };
+  }
+
+  const row = rows[0];
+  return {
+    found: true,
+    customer: {
+      id: row.id,
+      company_name: row.company_name,
+      domain: row.domain,
+      contact_name: row.contact_name,
+      contact_email: row.contact_email,
+      industry: row.industry,
+      qualification_score: row.qualification_score !== null ? Number(row.qualification_score) : null,
+      status: row.status,
+      created_at: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+    },
+  };
+}
+

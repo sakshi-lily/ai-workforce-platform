@@ -147,6 +147,41 @@ export async function executeChatStep(
       userPrompt.includes("eval") ||
       /\d+\s*[\+\-\*\/%]\s*\d+/.test(userPrompt);
 
+    const isCustomerVerify =
+      userPrompt.includes("verify") ||
+      userPrompt.includes("customer") ||
+      userPrompt.includes("crm") ||
+      userPrompt.includes("database") ||
+      userPrompt.includes("check customer") ||
+      userPrompt.includes("@");
+
+    // If query is specifically about customer verification, or contains an email without explicit web search instruction
+    const asksWebSearchFirst = (userPrompt.includes("search") || userPrompt.includes("research") || userPrompt.includes("look up online")) && !userPrompt.startsWith("check customer");
+
+    if (isCustomerVerify && !asksWebSearchFirst && options.tools?.some((t) => (t as any).function?.name === "mysql_verify_customer")) {
+      const emailMatch = userMessage?.content.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+      const email = emailMatch ? emailMatch[0].trim().toLowerCase() : "sarah@apexcloud.io";
+
+      return {
+        content: null,
+        toolCall: {
+          tool: "mysql_verify_customer",
+          arguments: { email },
+          toolCallId: "sim_call_mysql_1",
+        },
+        telemetry: {
+          provider: `${provider}-simulation`,
+          model,
+          inputTokens,
+          outputTokens: 25,
+          totalTokens: inputTokens + 25,
+          latencyMs: elapsed,
+          estimatedCostUsd: calculateCostUsd(inputTokens, 25),
+          status: "SUCCESS",
+        },
+      };
+    }
+
     if (isTime) {
       let timezone = "Asia/Kolkata";
       if (userPrompt.includes("utc")) timezone = "UTC";
@@ -226,38 +261,146 @@ export async function executeChatStep(
     };
   }
 
-  // Scenario B: Observation received -> Synthesize final answer with source attribution
+  // Scenario B: Observations received -> Check for multi-tool chaining or synthesize final answer
   if (hasToolObservation) {
-    const observationMessage = messages.find((m) => m.role === "tool");
-    let answer = "Tool execution succeeded.";
+    const userMessage = [...messages].reverse().find((m) => m.role === "user");
+    const userPrompt = userMessage ? userMessage.content.toLowerCase() : "";
 
-    if (observationMessage) {
-      try {
-        const obs = JSON.parse(observationMessage.content);
-        if (obs.tool === "get_current_time" && obs.success) {
-          answer = `It is currently ${obs.data.formatted} (Timezone: ${obs.data.timezone}).`;
-        } else if (obs.tool === "calculate" && obs.success) {
-          answer = `The calculated result for expression '${obs.data.expression}' is ${obs.data.result}.`;
-        } else if (obs.tool === "web_search" && obs.success) {
-          const results = obs.data.results || [];
-          if (results.length > 0) {
-            const summaryPoints = results
-              .map((r: any) => `• ${r.title}\n  ${r.snippet}`)
-              .join("\n\n");
-            const sourcesList = results
-              .map((r: any, idx: number) => `[${idx + 1}] ${r.title} — ${r.url}`)
-              .join("\n");
+    // Multi-tool chaining: if web_search finished and prompt also requested MySQL customer verification
+    const hasWebSearchObs = messages.some((m) => m.role === "tool" && m.content.includes('"web_search"'));
+    const hasMysqlObs = messages.some((m) => m.role === "tool" && m.content.includes('"mysql_verify_customer"'));
+    const needsCustomerVerify =
+      userPrompt.includes("verify") ||
+      userPrompt.includes("customer") ||
+      userPrompt.includes("database") ||
+      userPrompt.includes("crm");
 
-            answer = `Based on verified web search observations for '${obs.data.query}':\n\n${summaryPoints}\n\n**Sources & Attribution:**\n${sourcesList}`;
-          } else {
-            answer = `Web search query '${obs.data.query}' completed, but returned no matching public records.`;
-          }
-        } else if (!obs.success) {
-          answer = `Tool execution failed: ${obs.error?.message || "Unknown error"}`;
+    if (
+      hasWebSearchObs &&
+      !hasMysqlObs &&
+      needsCustomerVerify &&
+      options.tools?.some((t) => (t as any).function?.name === "mysql_verify_customer")
+    ) {
+      const emailMatch = userMessage?.content.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+      const email = emailMatch ? emailMatch[0].trim().toLowerCase() : "sarah@apexcloud.io";
+
+      return {
+        content: null,
+        toolCall: {
+          tool: "mysql_verify_customer",
+          arguments: { email },
+          toolCallId: "sim_call_mysql_multi_1",
+        },
+        telemetry: {
+          provider: `${provider}-simulation`,
+          model,
+          inputTokens,
+          outputTokens: 25,
+          totalTokens: inputTokens + 25,
+          latencyMs: elapsed,
+          estimatedCostUsd: calculateCostUsd(inputTokens, 25),
+          status: "SUCCESS",
+        },
+      };
+    }
+
+    // Synthesize final multi-source response
+    const toolObservations = messages
+      .filter((m) => m.role === "tool")
+      .map((m) => {
+        try {
+          return JSON.parse(m.content);
+        } catch {
+          return { tool: "unknown", success: false, data: m.content };
         }
-      } catch {
-        answer = `Tool returned observation: ${observationMessage.content}`;
+      });
+
+    let answer = "Tool execution completed.";
+    const webObs = toolObservations.find((o) => o.tool === "web_search");
+    const mysqlObs = toolObservations.find((o) => o.tool === "mysql_verify_customer");
+    const timeObs = toolObservations.find((o) => o.tool === "get_current_time");
+    const calcObs = toolObservations.find((o) => o.tool === "calculate");
+
+    if (webObs && mysqlObs) {
+      // Multi-Tool Combined Synthesis (Web Search + MySQL Verification)
+      let webSummary = "No external results found.";
+      let sourcesList = "";
+      if (webObs.success && webObs.data.results?.length > 0) {
+        webSummary = webObs.data.results
+          .map((r: any) => `• ${r.title}\n  ${r.snippet}`)
+          .join("\n\n");
+        sourcesList = webObs.data.results
+          .map((r: any, idx: number) => `[${idx + 1}] ${r.title} — ${r.url}`)
+          .join("\n");
       }
+
+      let mysqlSummary = "Customer lookup failed or produced no match.";
+      if (mysqlObs.success) {
+        if (mysqlObs.data.found && mysqlObs.data.customer) {
+          const c = mysqlObs.data.customer;
+          mysqlSummary =
+            `• Status: Customer VERIFIED in internal CRM\n` +
+            `• Account: ${c.company_name} (${c.domain})\n` +
+            `• Contact: ${c.contact_name || "N/A"} <${c.contact_email || "N/A"}>\n` +
+            `• Industry: ${c.industry || "N/A"}\n` +
+            `• CRM Stage: ${c.status}\n` +
+            `• Qualification Score: ${c.qualification_score ?? "N/A"}/100`;
+        } else {
+          mysqlSummary = `• Status: NOT FOUND in internal database. No existing records match this customer.`;
+        }
+      }
+
+      answer =
+        `### Multi-Source Intelligence Verification Report\n\n` +
+        `**1. External Web Findings (Public Untrusted Data):**\n${webSummary}\n\n` +
+        `**2. Internal Database Records (Authoritative MySQL Truth):**\n${mysqlSummary}\n\n` +
+        `**Sources & Attribution:**\n${sourcesList ? sourcesList + "\n" : ""}` +
+        `[Internal] MySQL 8.4 'customers' table (read-only verification query)`;
+    } else if (mysqlObs) {
+      if (mysqlObs.success) {
+        if (mysqlObs.data.found && mysqlObs.data.customer) {
+          const c = mysqlObs.data.customer;
+          answer =
+            `### Customer Verification Report\n\n` +
+            `• **Verification Status**: ✓ VERIFIED in internal CRM\n` +
+            `• **Company Name**: ${c.company_name}\n` +
+            `• **Domain**: ${c.domain}\n` +
+            `• **Primary Contact**: ${c.contact_name || "N/A"} (${c.contact_email || "N/A"})\n` +
+            `• **Industry**: ${c.industry || "General"}\n` +
+            `• **Lifecycle Stage**: ${c.status}\n` +
+            `• **Qualification Score**: ${c.qualification_score ?? "N/A"}/100\n` +
+            `• **Created At**: ${new Date(c.created_at).toLocaleDateString()}\n\n` +
+            `**Sources & Attribution:**\n` +
+            `[Internal] MySQL 8.4 database (\`customers\` table, parameterized email query)`;
+        } else {
+          answer =
+            `### Customer Verification Report\n\n` +
+            `• **Verification Status**: ✗ NOT FOUND in internal database\n` +
+            `• **Detail**: No matching customer record exists in our CRM for the specified email address.\n\n` +
+            `**Sources & Attribution:**\n` +
+            `[Internal] MySQL 8.4 database (\`customers\` table, verified zero rows matched)`;
+        }
+      } else {
+        answer = `Database verification failed: ${mysqlObs.error?.message || "Unknown error"}`;
+      }
+    } else if (webObs) {
+      const results = webObs.data?.results || [];
+      if (results.length > 0) {
+        const summaryPoints = results
+          .map((r: any) => `• ${r.title}\n  ${r.snippet}`)
+          .join("\n\n");
+        const sourcesList = results
+          .map((r: any, idx: number) => `[${idx + 1}] ${r.title} — ${r.url}`)
+          .join("\n");
+
+        answer = `Based on verified web search observations for '${webObs.data.query}':\n\n${summaryPoints}\n\n**Sources & Attribution:**\n${sourcesList}`;
+      } else {
+        answer = `Web search query '${webObs.data?.query}' completed, but returned no matching public records.`;
+      }
+    } else if (timeObs && timeObs.success) {
+      answer = `It is currently ${timeObs.data.formatted} (Timezone: ${timeObs.data.timezone}).`;
+    } else if (calcObs && calcObs.success) {
+      answer = `The calculated result for expression '${calcObs.data.expression}' is ${calcObs.data.result}.`;
     }
 
     const outputTokens = Math.max(25, Math.round(answer.length / 4));

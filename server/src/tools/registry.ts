@@ -3,15 +3,17 @@ import { Tool, ToolContext, ToolExecutionEnvelope, ToolSummary } from "./types";
 import { getCurrentTimeTool } from "./implementations/getCurrentTime";
 import { calculateTool } from "./implementations/calculate";
 import { webSearchTool } from "./implementations/webSearch";
+import { mysqlVerifyCustomerTool } from "./implementations/mysqlVerifyCustomer";
 
 export class ToolRegistry {
   private tools: Map<string, Tool> = new Map();
 
   constructor() {
-    // Register Phase 8 & 9 safe authorized tools
+    // Register Phase 8, 9 & 10 safe authorized tools
     this.registerTool(getCurrentTimeTool);
     this.registerTool(calculateTool);
     this.registerTool(webSearchTool);
+    this.registerTool(mysqlVerifyCustomerTool);
   }
 
   /**
