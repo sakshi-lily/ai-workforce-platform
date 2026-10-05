@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import { healthRouter } from "./routes/healthRoutes";
 import { customerRouter } from "./routes/customerRoutes";
+import { aiRouter } from "./routes/aiRoutes";
 
 export const app = express();
 
@@ -19,6 +20,7 @@ app.use(express.json());
 // Mount routers
 app.use("/api/health", healthRouter);
 app.use("/api/customers", customerRouter);
+app.use("/api/ai", aiRouter);
 
 // Catch-all 404 handler
 app.use((_req: Request, res: Response) => {
@@ -28,7 +30,7 @@ app.use((_req: Request, res: Response) => {
   });
 });
 
-// Centralized error handler preventing internal DB error leakage
+// Centralized error handler preventing internal provider/database error leakage
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   console.error("[Server Error]", err);
   const message =

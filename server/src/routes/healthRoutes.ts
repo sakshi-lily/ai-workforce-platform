@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { checkDatabaseHealth } from "../db/pool";
 import { checkRedisHealth } from "../cache/redis";
+import { config } from "../config/env";
 
 export const healthRouter = Router();
 
@@ -52,4 +53,17 @@ healthRouter.get("/redis", async (_req: Request, res: Response) => {
       fallback: "Degraded to MySQL",
     });
   }
+});
+
+// AI Service readiness health check (verifies configuration without calling LLM)
+healthRouter.get("/ai", (_req: Request, res: Response) => {
+  const isKeyConfigured = Boolean(config.llm.apiKey && config.llm.apiKey.trim().length > 0);
+  res.status(200).json({
+    status: "ok",
+    ai: "ready",
+    provider: config.llm.provider,
+    model: config.llm.model,
+    mode: isKeyConfigured ? "live" : "developer-simulation",
+    timeoutMs: config.llm.timeoutMs,
+  });
 });

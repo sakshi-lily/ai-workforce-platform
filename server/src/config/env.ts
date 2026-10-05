@@ -23,4 +23,17 @@ export const config = {
     password: process.env.REDIS_PASSWORD || undefined,
     ttlSeconds: Number(process.env.REDIS_TTL_SECONDS) || 60,
   },
+  llm: {
+    provider: process.env.LLM_PROVIDER || "openai",
+    model: process.env.LLM_MODEL || "gpt-4o-mini",
+    apiKey: process.env.LLM_API_KEY || "",
+    baseUrl: process.env.LLM_BASE_URL || undefined,
+    timeoutMs: Number(process.env.LLM_TIMEOUT_MS) || 30000,
+    maxRetries: Number(process.env.LLM_MAX_RETRIES) || 2,
+    pricing: {
+      // Pricing per 1M tokens (e.g. gpt-4o-mini standard)
+      inputPerMillion: 0.15,
+      outputPerMillion: 0.60,
+    },
+  },
 };

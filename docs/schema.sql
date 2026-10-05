@@ -127,3 +127,22 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL,
     INDEX idx_audit_event (event_type, created_at DESC)
 ) ENGINE=InnoDB;
+
+-- 8. AI Telemetry & Execution Metrics (Phase 6)
+CREATE TABLE IF NOT EXISTS ai_telemetry (
+    id VARCHAR(36) PRIMARY KEY,
+    task_id VARCHAR(36) NULL,
+    provider VARCHAR(50) NOT NULL,
+    model VARCHAR(100) NOT NULL,
+    prompt_type VARCHAR(50) NOT NULL DEFAULT 'text',
+    prompt_tokens INT UNSIGNED NOT NULL DEFAULT 0,
+    completion_tokens INT UNSIGNED NOT NULL DEFAULT 0,
+    total_tokens INT UNSIGNED NOT NULL DEFAULT 0,
+    latency_ms INT UNSIGNED NOT NULL DEFAULT 0,
+    estimated_cost_usd DECIMAL(8, 6) NOT NULL DEFAULT 0.000000,
+    status ENUM('SUCCESS', 'FAILED') NOT NULL DEFAULT 'SUCCESS',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL,
+    INDEX idx_ai_telemetry_created (created_at DESC)
+) ENGINE=InnoDB;
+
