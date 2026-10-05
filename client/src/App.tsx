@@ -83,7 +83,24 @@ interface TelemetryRecord {
   created_at: string;
 }
 
-// Phase 7 - Simple Agent Types
+// Phase 7 & 8 - Agent & Tool Calling Types
+export type ToolRiskLevel = 'READ_ONLY' | 'LOW_RISK' | 'MUTATING' | 'EXTERNAL_SIDE_EFFECT';
+
+export interface RegisteredTool {
+  name: string;
+  description: string;
+  riskLevel: ToolRiskLevel;
+}
+
+export interface ClientToolExecution {
+  id: string;
+  tool: string;
+  arguments: Record<string, unknown>;
+  result: unknown;
+  durationMs: number;
+  success: boolean;
+}
+
 interface AgentPlanStep {
   order: number;
   title?: string;
@@ -115,6 +132,8 @@ interface AgentExecutionResult {
     description: string;
     status: string;
   }>;
+  finalAnswer?: string | null;
+  toolExecutions?: ClientToolExecution[];
   telemetry: {
     model: string;
     totalTokens: number;
@@ -193,8 +212,11 @@ export default function App() {
   const [telemetryHistory, setTelemetryHistory] = useState<TelemetryRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState<boolean>(false);
 
-  // Phase 7: Simple Agent state
-  const [agentTaskPrompt, setAgentTaskPrompt] = useState<string>('Find potential customers for our AI automation product.');
+  // Phase 7 & 8: Simple Agent & Tool Calling state
+  const [agentMode, setAgentMode] = useState<'tools' | 'planning'>('tools');
+  const [registeredTools, setRegisteredTools] = useState<RegisteredTool[]>([]);
+  const [selectedTools, setSelectedTools] = useState<string[]>(['get_current_time', 'calculate']);
+  const [agentTaskPrompt, setAgentTaskPrompt] = useState<string>('What time is it in India?');
   const [agentLoading, setAgentLoading] = useState<boolean>(false);
   const [agentResult, setAgentResult] = useState<AgentExecutionResult | null>(null);
   const [agentError, setAgentError] = useState<string | null>(null);
@@ -428,7 +450,7 @@ export default function App() {
     }
   };
 
-  // 10. Phase 7: Fetch Agent Tasks from MySQL
+  // 10. Phase 7 & 8: Fetch Agent Tasks from MySQL
   const fetchAgentTasks = async () => {
     setAgentTasksLoading(true);
     try {
@@ -443,7 +465,21 @@ export default function App() {
     }
   };
 
-  // 11. Phase 7: Execute Simple Agent Task
+  // 10b. Phase 8: Fetch Registered Tools Catalog
+  const fetchRegisteredTools = async () => {
+    try {
+      const res = await fetch('http://localhost:3000/api/agent/tools');
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.data) {
+        setRegisteredTools(json.data);
+      }
+    } catch {
+      // Tool catalog fetch non-blocking
+    }
+  };
+
+  // 11. Phase 7 & 8: Execute Agent Task (Tool Calling or Autonomous Planning)
   const handleRunAgent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!agentTaskPrompt.trim()) return;
@@ -458,6 +494,8 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           task: agentTaskPrompt.trim(),
+          mode: agentMode,
+          allowedTools: selectedTools,
         }),
       });
 
@@ -465,7 +503,7 @@ export default function App() {
 
       if (!res.ok) {
         if (json.data) {
-          // Execution completed with FAILED state
+          // Execution completed with FAILED state (e.g., authorization rejection)
           setAgentResult(json.data);
         }
         throw new Error(json.error?.message || json.message || `Agent execution failed (HTTP ${res.status})`);
@@ -481,25 +519,47 @@ export default function App() {
     }
   };
 
-  // 12. Phase 7: Load Agent Task from History
+  // 12. Phase 7 & 8: Load Agent Task from History
   const loadTaskDetails = async (taskId: string) => {
     try {
       const res = await fetch(`http://localhost:3000/api/agent/tasks/${taskId}`);
       if (!res.ok) return;
       const json = await res.json();
       if (json.data) {
+        const rawTools = json.data.toolExecutions || [];
+        const parsedTools: ClientToolExecution[] = rawTools.map((t: any) => {
+          let parsedOutput = t.output_payload;
+          if (typeof t.output_payload === 'string') {
+            try {
+              parsedOutput = JSON.parse(t.output_payload);
+            } catch {
+              parsedOutput = t.output_payload;
+            }
+          }
+          return {
+            id: t.id,
+            tool: t.tool_name,
+            arguments: t.input_payload || {},
+            result: parsedOutput,
+            durationMs: t.duration_ms,
+            success: !t.is_error,
+          };
+        });
+
         setAgentResult({
           taskId: json.data.task.id,
           status: json.data.task.status,
-          cycles: 1,
+          cycles: json.data.task.cycles || 1,
           latencyMs: json.data.telemetry?.latencyMs || 0,
           plan: json.data.plan,
-          steps: json.data.steps,
+          steps: json.data.steps || [],
+          finalAnswer: json.data.task.final_report,
+          toolExecutions: parsedTools,
           telemetry: json.data.telemetry,
           timeline: [
             { state: 'REQUESTED', timestamp: json.data.task.created_at, details: 'Created' },
             { state: 'RUNNING', timestamp: json.data.task.started_at || json.data.task.created_at, details: 'Host started' },
-            { state: 'COMPLETED', timestamp: json.data.task.completed_at || json.data.task.updated_at, details: 'Finished' },
+            { state: json.data.task.status, timestamp: json.data.task.completed_at || json.data.task.updated_at, details: `Task finished with status ${json.data.task.status}` },
           ],
         });
         setAgentTaskPrompt(json.data.task.prompt);
@@ -518,6 +578,7 @@ export default function App() {
     fetchCustomers();
     fetchTelemetryHistory();
     fetchAgentTasks();
+    fetchRegisteredTools();
   }, []);
 
   return (
@@ -721,62 +782,191 @@ export default function App() {
           </div>
         </section>
 
-        {/* Section 2: Phase 7 — Simple Agent Studio (Bounded Autonomous Planning) */}
+        {/* Section 2: Phase 7 & 8 — Agent Host & Tool Execution Studio */}
         <section className="bg-slate-900/60 backdrop-blur-md rounded-2xl border border-cyan-900/40 p-6 sm:p-8 shadow-2xl space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
             <div>
               <div className="flex items-center gap-3">
                 <span className="p-2 rounded-xl bg-cyan-950/80 border border-cyan-500/40 text-cyan-300">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
                 </span>
                 <div>
                   <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    Simple Agent Execution Studio
+                    Agent Host & Tool Execution Studio
                     <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-700/50 text-cyan-300">
-                      Phase 7
+                      Phase 8: Tool Calling
                     </span>
                   </h2>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Host-controlled state machine: <code className="text-cyan-300 font-mono">REQUESTED → RUNNING → LLM_CALL → VALIDATING → COMPLETED</code>
+                    Host boundary: <code className="text-cyan-300 font-mono">LLM Proposes → Host Validates & Authorizes → Safe Tool Execution → Observation → Final Answer</code>
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-400">
-                Watchdog: <strong className="text-cyan-300">10 Cycles / 180s</strong>
+                Watchdogs: <strong className="text-cyan-300">10 Cycles</strong> &bull; <strong className="text-purple-300">10 Tools</strong> &bull; <strong className="text-slate-200">180s</strong>
               </span>
             </div>
           </div>
 
+          {/* Mode Switcher Tabs */}
+          <div className="flex items-center gap-2 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800 w-fit">
+            <button
+              type="button"
+              onClick={() => {
+                setAgentMode('tools');
+                setAgentTaskPrompt('What time is it in India?');
+              }}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
+                agentMode === 'tools'
+                  ? 'bg-cyan-600 text-white shadow-md shadow-cyan-950'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <span>⚡ Tool Calling Mode (Phase 8)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAgentMode('planning');
+                setAgentTaskPrompt('Find potential customers for our AI automation product.');
+              }}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
+                agentMode === 'planning'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <span>📋 Autonomous Planning Mode (Phase 7)</span>
+            </button>
+          </div>
+
+          {/* Authoritative Tool Allowlist & Catalog Bar */}
+          {agentMode === 'tools' && (
+            <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800/80 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                  <span>Authoritative Platform Tools (Server Gated):</span>
+                  <span className="text-[10px] text-slate-500 font-mono font-normal">Toggle to test security allowlist rejection</span>
+                </span>
+                <span className="text-[10px] font-mono text-cyan-400">
+                  {selectedTools.length} of {registeredTools.length} enabled
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {registeredTools.map((tool) => {
+                  const isChecked = selectedTools.includes(tool.name);
+                  return (
+                    <label
+                      key={tool.name}
+                      className={`p-3 rounded-lg border text-xs cursor-pointer transition-all flex items-start justify-between gap-3 ${
+                        isChecked
+                          ? 'bg-slate-900/90 border-cyan-800/70 text-slate-100 shadow-sm'
+                          : 'bg-slate-950/50 border-slate-800/80 text-slate-500 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedTools([...selectedTools, tool.name]);
+                            } else {
+                              setSelectedTools(selectedTools.filter((t) => t !== tool.name));
+                            }
+                          }}
+                          className="mt-0.5 accent-cyan-500 rounded cursor-pointer"
+                        />
+                        <div>
+                          <div className="font-mono font-bold text-cyan-300">{tool.name}</div>
+                          <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{tool.description}</p>
+                        </div>
+                      </div>
+                      <span
+                        className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                          tool.riskLevel === 'READ_ONLY'
+                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/50'
+                            : 'bg-amber-950 text-amber-300 border border-amber-800/50'
+                        }`}
+                      >
+                        {tool.riskLevel}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Quick Presets */}
           <div className="space-y-1.5">
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Agent Planning Presets:</span>
+            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+              {agentMode === 'tools' ? 'Phase 8 Tool Verification Presets:' : 'Phase 7 Planning Presets:'}
+            </span>
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setAgentTaskPrompt('Find potential customers for our AI automation product.')}
-                className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
-              >
-                Customer Discovery Plan
-              </button>
-              <button
-                type="button"
-                onClick={() => setAgentTaskPrompt('Analyze inbound enterprise healthcare leads and establish compliance qualification workflow.')}
-                className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
-              >
-                Healthcare ICP Qualification
-              </button>
-              <button
-                type="button"
-                onClick={() => setAgentTaskPrompt('Plan automated database synchronization audit and reconciliation between MySQL and Redis.')}
-                className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
-              >
-                Database Audit Plan
-              </button>
+              {agentMode === 'tools' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setAgentTaskPrompt('What time is it in India?')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
+                  >
+                    Current Time (India)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentTaskPrompt('Calculate ((125 * 4) + 50) / 5')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
+                  >
+                    Calculate ((125 * 4) + 50) / 5
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentTaskPrompt('What time is it in Tokyo (Asia/Tokyo)?')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
+                  >
+                    Current Time (Tokyo)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentTaskPrompt('Calculate 45 * 12 + 10')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
+                  >
+                    Calculate 45 * 12 + 10
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setAgentTaskPrompt('Find potential customers for our AI automation product.')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
+                  >
+                    Customer Discovery Plan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentTaskPrompt('Analyze inbound enterprise healthcare leads and establish compliance qualification workflow.')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
+                  >
+                    Healthcare ICP Qualification
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentTaskPrompt('Plan automated database synchronization audit and reconciliation between MySQL and Redis.')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
+                  >
+                    Database Audit Plan
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -787,13 +977,13 @@ export default function App() {
               required
               value={agentTaskPrompt}
               onChange={(e) => setAgentTaskPrompt(e.target.value)}
-              placeholder="Enter high-level user instruction for the Simple Agent..."
+              placeholder={agentMode === 'tools' ? "Ask the Agent a question requiring tools (e.g. 'What time is it in India?', 'Calculate (25 * 40)')..." : "Enter high-level user instruction for the Planning Agent..."}
               className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono resize-y"
             />
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="text-[11px] text-slate-500">
-                Endpoint: <code className="text-cyan-400 font-mono">POST /api/agent/tasks</code>
+                Endpoint: <code className="text-cyan-400 font-mono">POST /api/agent/tasks</code> &bull; Mode: <strong className="text-slate-300">{agentMode}</strong>
               </div>
               <button
                 type="submit"
@@ -828,7 +1018,7 @@ export default function App() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
               <div>
-                <strong>Execution Halt:</strong> {agentError}
+                <strong>Execution Halt / Security Rejection:</strong> {agentError}
               </div>
             </div>
           )}
@@ -837,7 +1027,7 @@ export default function App() {
           {agentResult && (
             <div className="space-y-5 pt-2 border-t border-slate-800">
               {/* Telemetry & State Bar */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-3.5 rounded-xl bg-slate-950 border border-cyan-900/40 text-xs font-mono">
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 p-3.5 rounded-xl bg-slate-950 border border-cyan-900/40 text-xs font-mono">
                 <div>
                   <span className="text-[10px] text-slate-500 block uppercase">Task Status</span>
                   <span className={`font-semibold inline-flex items-center gap-1.5 ${agentResult.status === 'COMPLETED' ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -848,6 +1038,10 @@ export default function App() {
                 <div>
                   <span className="text-[10px] text-slate-500 block uppercase">Cycle Watchdog</span>
                   <span className="font-semibold text-cyan-300">{agentResult.cycles} / 10 MAX</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-500 block uppercase">Tools Watchdog</span>
+                  <span className="font-semibold text-purple-300">{(agentResult.toolExecutions?.length ?? 0)} / 10 MAX</span>
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-500 block uppercase">Latency</span>
@@ -874,6 +1068,8 @@ export default function App() {
                           ? 'bg-emerald-950 border border-emerald-700/50 text-emerald-300'
                           : event.state === 'FAILED'
                           ? 'bg-rose-950 border border-rose-700/50 text-rose-300'
+                          : event.state.startsWith('TOOL_')
+                          ? 'bg-purple-950 border border-purple-700/50 text-purple-300'
                           : 'bg-slate-900 border border-slate-800 text-cyan-300'
                       }`}>
                         <span>✓</span>
@@ -887,7 +1083,88 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Generated Plan & Steps Display */}
+              {/* Phase 8 Tool Executions & Observations List */}
+              {agentResult.toolExecutions && agentResult.toolExecutions.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-purple-300 flex items-center gap-2">
+                      <span>Tool Executions & Observations</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-950 border border-purple-800 text-purple-300">
+                        {agentResult.toolExecutions.length} Recorded in MySQL <code className="text-purple-200">tool_executions</code>
+                      </span>
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {agentResult.toolExecutions.map((exec) => (
+                      <div
+                        key={exec.id}
+                        className="p-4 rounded-xl bg-slate-950/90 border border-purple-900/50 shadow-md space-y-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                          <div className="flex items-center gap-2.5">
+                            <span className="px-2 py-0.5 rounded bg-purple-950 border border-purple-700/60 font-mono font-bold text-xs text-purple-300">
+                              {exec.tool}
+                            </span>
+                            <span className="text-[11px] font-mono text-slate-400">
+                              Duration: <strong className="text-white">{exec.durationMs} ms</strong>
+                            </span>
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${
+                              exec.success
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/50'
+                                : 'bg-rose-950 text-rose-300 border border-rose-800/50'
+                            }`}
+                          >
+                            {exec.success ? '✓ SUCCESS' : 'FAILED'}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                          {/* Validated Input Arguments */}
+                          <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">
+                            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans font-medium">
+                              Validated Arguments (Zod Verified)
+                            </span>
+                            <pre className="text-[11px] text-cyan-300 overflow-x-auto whitespace-pre-wrap">
+                              {JSON.stringify(exec.arguments, null, 2)}
+                            </pre>
+                          </div>
+
+                          {/* Normalized Tool Observation */}
+                          <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">
+                            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans font-medium">
+                              Authoritative Observation (Fed to LLM)
+                            </span>
+                            <pre className="text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap">
+                              {JSON.stringify(exec.result, null, 2)}
+                            </pre>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Phase 8 Final Answer Display */}
+              {agentResult.finalAnswer && (
+                <div className="p-5 rounded-xl bg-gradient-to-br from-slate-950 via-slate-900/80 to-slate-950 border border-emerald-500/30 shadow-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-mono text-emerald-400 font-bold tracking-wider flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Agent Final Verified Answer
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-500">Task: {agentResult.taskId.substring(0, 8)}...</span>
+                  </div>
+                  <div className="text-sm font-medium text-slate-100 leading-relaxed pt-1">
+                    {agentResult.finalAnswer}
+                  </div>
+                </div>
+              )}
+
+              {/* Generated Plan & Steps Display (Phase 7 Planning Mode) */}
               {agentResult.plan && (
                 <div className="space-y-4">
                   {/* Goal & Summary */}
@@ -1326,7 +1603,7 @@ export default function App() {
         {/* Section 5: Architecture Diagram */}
         <section className="bg-slate-900/40 rounded-2xl border border-slate-800/80 p-6 sm:p-8">
           <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-4">
-            Phase 7 Agent Host Architecture Pipeline
+            Phase 8 Tool Calling & Agent Host Architecture Pipeline
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-center">
             <div className="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
@@ -1334,7 +1611,7 @@ export default function App() {
               <span className="font-semibold text-xs text-slate-200">React + Vite</span>
               <span className="text-[11px] text-slate-500 mt-1">Port 5173</span>
               <div className="mt-2 text-[10px] text-cyan-300 bg-cyan-950/50 border border-cyan-800/50 px-2 py-0.5 rounded">
-                Simple Agent Studio
+                Tool Calling Studio & Timeline
               </div>
             </div>
 
@@ -1342,35 +1619,35 @@ export default function App() {
               <span className="text-[10px] font-mono text-indigo-400 mb-1">GATEWAY</span>
               <span className="font-semibold text-xs text-slate-200">Express API</span>
               <span className="text-[11px] text-slate-500 mt-1">Port 3000</span>
-              <div className="mt-2 text-[10px] text-indigo-300 bg-indigo-950/50 border border-indigo-800/50 px-2 py-0.5 rounded">
-                POST /api/agent/tasks
+              <div className="mt-2 text-[10px] text-indigo-300 bg-indigo-950/50 border border-indigo-800/50 px-2 py-0.5 rounded font-mono">
+                /api/agent/tasks & tools
               </div>
             </div>
 
             <div className="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
               <span className="text-[10px] font-mono text-purple-400 mb-1">AGENT HOST</span>
               <span className="font-semibold text-xs text-slate-200">State & Loop</span>
-              <span className="text-[11px] text-slate-500 mt-1">10 Cycles / 180s Watchdogs</span>
+              <span className="text-[11px] text-slate-500 mt-1">Watchdogs & Allowlist</span>
               <div className="mt-2 text-[10px] text-purple-300 bg-purple-950/50 border border-purple-800/50 px-2 py-0.5 rounded font-mono">
-                Zod Plan Validation
+                Observation Loop
               </div>
             </div>
 
             <div className="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
-              <span className="text-[10px] font-mono text-rose-400 mb-1">CACHE LAYER</span>
-              <span className="font-semibold text-xs text-slate-200">Redis 8.10</span>
-              <span className="text-[11px] text-slate-500 mt-1">Port 6379</span>
+              <span className="text-[10px] font-mono text-rose-400 mb-1">TOOL REGISTRY</span>
+              <span className="font-semibold text-xs text-slate-200">Safe Local Tools</span>
+              <span className="text-[11px] text-slate-500 mt-1">10s Execution Race</span>
               <div className="mt-2 text-[10px] text-rose-300 bg-rose-950/50 border border-rose-800/50 px-2 py-0.5 rounded font-mono">
-                Optimization Layer
+                Time & Calculate Tools
               </div>
             </div>
 
             <div className="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
               <span className="text-[10px] font-mono text-emerald-400 mb-1">DURABLE TRUTH</span>
               <span className="font-semibold text-xs text-slate-200">MySQL 8.4</span>
-              <span className="text-[11px] text-slate-500 mt-1">tasks & task_steps</span>
+              <span className="text-[11px] text-slate-500 mt-1">tool_executions</span>
               <div className="mt-2 text-[10px] text-emerald-300 bg-emerald-950/50 border border-emerald-800/50 px-2 py-0.5 rounded font-mono">
-                Authoritative State
+                tasks & tool_executions
               </div>
             </div>
           </div>
@@ -1378,7 +1655,7 @@ export default function App() {
 
         {/* Footer */}
         <footer className="text-center text-xs text-slate-500 pt-4 border-t border-slate-800/80">
-          AI Workforce Platform &bull; Phase 7: Simple Agent Complete &bull; Ready for Phase 8: Tool Calling
+          AI Workforce Platform &bull; Phase 8: Tool Calling Complete &bull; Ready for Phase 9: Web Search
         </footer>
       </div>
     </div>
