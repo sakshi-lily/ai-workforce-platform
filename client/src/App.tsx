@@ -215,7 +215,7 @@ export default function App() {
   // Phase 7, 8, 9: Simple Agent, Tool Calling & Web Search state
   const [agentMode, setAgentMode] = useState<'tools' | 'planning'>('tools');
   const [registeredTools, setRegisteredTools] = useState<RegisteredTool[]>([]);
-  const [selectedTools, setSelectedTools] = useState<string[]>(['get_current_time', 'calculate', 'web_search']);
+  const [selectedTools, setSelectedTools] = useState<string[]>(['get_current_time', 'calculate', 'web_search', 'mysql_verify_customer']);
   const [agentTaskPrompt, setAgentTaskPrompt] = useState<string>('Find the current CEO of Microsoft and summarize the key facts.');
   const [agentLoading, setAgentLoading] = useState<boolean>(false);
   const [agentResult, setAgentResult] = useState<AgentExecutionResult | null>(null);
@@ -908,38 +908,45 @@ export default function App() {
           {/* Quick Presets */}
           <div className="space-y-1.5">
             <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-              {agentMode === 'tools' ? 'Phase 9 Tool & Search Verification Presets:' : 'Phase 7 Planning Presets:'}
+              {agentMode === 'tools' ? 'Phase 10 Tool & Multi-Source Verification Presets:' : 'Phase 7 Planning Presets:'}
             </span>
             <div className="flex flex-wrap gap-2">
               {agentMode === 'tools' ? (
                 <>
                   <button
                     type="button"
+                    onClick={() => setAgentTaskPrompt('Check whether customer sarah@apexcloud.io already exists in our customer database and report their qualification status.')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-emerald-500/50 text-emerald-300 transition-colors cursor-pointer"
+                  >
+                    🏢 Verify: sarah@apexcloud.io (Found)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentTaskPrompt('Check whether customer ghost@unknown.com exists in our internal customer CRM.')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-amber-500/50 text-amber-300 transition-colors cursor-pointer"
+                  >
+                    🏢 Verify: ghost@unknown.com (Not Found)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentTaskPrompt('Search the web for Apex Cloud Innovations and verify whether contact sarah@apexcloud.io is an existing customer in our database.')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-cyan-300 transition-colors cursor-pointer"
+                  >
+                    🌐+🏢 Multi-Tool: Apex Cloud
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setAgentTaskPrompt('Find the current CEO of Microsoft and summarize the key facts.')}
-                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-cyan-300 transition-colors cursor-pointer"
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
                   >
-                    🔍 Search: CEO of Microsoft
+                    🔍 Search: Microsoft CEO
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAgentTaskPrompt('Search the web for the state of autonomous AI agent frameworks in 2026.')}
-                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-cyan-300 transition-colors cursor-pointer"
-                  >
-                    🔍 Search: AI Agent Frameworks
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAgentTaskPrompt('Search for the latest OpenAI GPT-4o multimodal models and API documentation.')}
-                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-cyan-300 transition-colors cursor-pointer"
-                  >
-                    🔍 Search: OpenAI GPT-4o
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAgentTaskPrompt('Find security research on indirect prompt injection vectors in web search.')}
+                    onClick={() => setAgentTaskPrompt('Check customer with email \' OR \'1\'=\'1 in database')}
                     className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-rose-500/50 text-rose-300 transition-colors cursor-pointer"
                   >
-                    🛡️ Security: Prompt Injection Test
+                    🛡️ Security: SQL Injection Test
                   </button>
                   <button
                     type="button"
@@ -1178,6 +1185,83 @@ export default function App() {
                             <details className="text-xs group">
                               <summary className="cursor-pointer text-[11px] font-mono text-slate-500 hover:text-slate-300 select-none">
                                 ▸ Inspect Raw Observation Payload (LLM Observation Data)
+                              </summary>
+                              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">
+                                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans font-medium">
+                                    Validated Input (Zod)
+                                  </span>
+                                  <pre className="text-[11px] text-cyan-300 overflow-x-auto whitespace-pre-wrap">
+                                    {JSON.stringify(exec.arguments, null, 2)}
+                                  </pre>
+                                </div>
+                                <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">
+                                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans font-medium">
+                                    Authoritative Observation
+                                  </span>
+                                  <pre className="text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap">
+                                    {JSON.stringify(exec.result, null, 2)}
+                                  </pre>
+                                </div>
+                              </div>
+                            </details>
+                          </div>
+                        ) : exec.tool === 'mysql_verify_customer' && exec.result && typeof exec.result === 'object' ? (
+                          <div className="space-y-3">
+                            <div className="flex flex-wrap items-center justify-between text-xs px-1 gap-2">
+                              <span className="text-slate-400">
+                                Lookup Email: <span className="font-semibold text-cyan-300 font-mono">"{(exec.arguments as any)?.email}"</span>
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[11px] font-mono font-semibold ${
+                                  (exec.result as any)?.found
+                                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/60'
+                                    : 'bg-amber-950 text-amber-300 border border-amber-800/60'
+                                }`}
+                              >
+                                {(exec.result as any)?.found ? '✓ VERIFIED IN DATABASE' : '✗ NOT FOUND IN DATABASE'}
+                              </span>
+                            </div>
+
+                            {(exec.result as any)?.found && (exec.result as any)?.customer ? (
+                              <div className="p-3.5 rounded-lg bg-slate-900/90 border border-slate-800 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-bold text-white">{(exec.result as any).customer.company_name}</span>
+                                    <span className="text-xs font-mono text-cyan-400">({(exec.result as any).customer.domain})</span>
+                                  </div>
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-950 text-indigo-300 border border-indigo-800/60 font-mono">
+                                    {(exec.result as any).customer.status}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] pt-1.5 border-t border-slate-800/60">
+                                  <div>
+                                    <span className="text-slate-500 block">Contact:</span>
+                                    <span className="text-slate-200">{(exec.result as any).customer.contact_name || 'N/A'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-500 block">Email:</span>
+                                    <span className="text-slate-200 font-mono truncate">{(exec.result as any).customer.contact_email || 'N/A'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-500 block">Industry:</span>
+                                    <span className="text-slate-200">{(exec.result as any).customer.industry || 'N/A'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-500 block">Qualification:</span>
+                                    <span className="text-emerald-400 font-semibold">{(exec.result as any).customer.qualification_score ?? 'N/A'}/100</span>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800/80 text-xs text-slate-400">
+                                No record matching <code className="text-slate-300 font-mono">{(exec.arguments as any)?.email}</code> was found in MySQL <code className="text-slate-300 font-mono">customers</code> table.
+                              </div>
+                            )}
+
+                            <details className="text-xs group">
+                              <summary className="cursor-pointer text-[11px] font-mono text-slate-500 hover:text-slate-300 select-none">
+                                ▸ Inspect Full Normalized Observation Payload (MySQL Result)
                               </summary>
                               <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">
@@ -1683,7 +1767,7 @@ export default function App() {
         {/* Section 5: Architecture Diagram */}
         <section className="bg-slate-900/40 rounded-2xl border border-slate-800/80 p-6 sm:p-8">
           <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-4">
-            Phase 9 Web Search & Agent Host Architecture Pipeline
+            Phase 10 Multi-Source Verification & Agent Host Architecture Pipeline
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-center">
             <div className="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
@@ -1691,7 +1775,7 @@ export default function App() {
               <span className="font-semibold text-xs text-slate-200">React + Vite</span>
               <span className="text-[11px] text-slate-500 mt-1">Port 5173</span>
               <div className="mt-2 text-[10px] text-cyan-300 bg-cyan-950/50 border border-cyan-800/50 px-2 py-0.5 rounded">
-                Tool Calling Studio & Search Timeline
+                Multi-Tool Calling Studio & Verification
               </div>
             </div>
 
@@ -1709,25 +1793,25 @@ export default function App() {
               <span className="font-semibold text-xs text-slate-200">State & Loop</span>
               <span className="text-[11px] text-slate-500 mt-1">Watchdogs & Allowlist</span>
               <div className="mt-2 text-[10px] text-purple-300 bg-purple-950/50 border border-purple-800/50 px-2 py-0.5 rounded font-mono">
-                Observation Loop (Max 5 Searches)
+                Multi-Source Reasoner
               </div>
             </div>
 
             <div className="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
-              <span className="text-[10px] font-mono text-rose-400 mb-1">TOOL REGISTRY & SEARCH</span>
-              <span className="font-semibold text-xs text-slate-200">Safe Tools & Provider</span>
-              <span className="text-[11px] text-slate-500 mt-1">Provider Adapter & Normalizer</span>
+              <span className="text-[10px] font-mono text-rose-400 mb-1">TOOL REGISTRY</span>
+              <span className="font-semibold text-xs text-slate-200">Web & DB Tools</span>
+              <span className="text-[11px] text-slate-500 mt-1">Server-Owned SQL</span>
               <div className="mt-2 text-[10px] text-rose-300 bg-rose-950/50 border border-rose-800/50 px-2 py-0.5 rounded font-mono">
-                web_search, time, calc
+                mysql_verify_customer, web_search
               </div>
             </div>
 
             <div className="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
               <span className="text-[10px] font-mono text-emerald-400 mb-1">DURABLE TRUTH</span>
               <span className="font-semibold text-xs text-slate-200">MySQL 8.4</span>
-              <span className="text-[11px] text-slate-500 mt-1">tool_executions</span>
+              <span className="text-[11px] text-slate-500 mt-1">customers & executions</span>
               <div className="mt-2 text-[10px] text-emerald-300 bg-emerald-950/50 border border-emerald-800/50 px-2 py-0.5 rounded font-mono">
-                tasks & tool_executions
+                Parameterized Query
               </div>
             </div>
           </div>
@@ -1735,7 +1819,7 @@ export default function App() {
 
         {/* Footer */}
         <footer className="text-center text-xs text-slate-500 pt-4 border-t border-slate-800/80">
-          AI Workforce Platform &bull; Phase 9: Web Search Complete &bull; Ready for Phase 10: MySQL Verification
+          AI Workforce Platform &bull; Phase 10: MySQL Verification Complete &bull; Ready for Phase 11: Qdrant / Vector Database
         </footer>
       </div>
     </div>
