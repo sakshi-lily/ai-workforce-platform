@@ -1,276 +1,567 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
-type ConnectionStatus = 'idle' | 'loading' | 'success' | 'error';
+type HealthStatus = 'idle' | 'loading' | 'success' | 'error';
 
-interface HealthResponse {
+interface ProcessHealth {
   status: string;
-  [key: string]: unknown;
+}
+
+interface DbHealth {
+  status: string;
+  database: string;
+  databaseName?: string;
+  serverVersion?: string;
+  error?: string;
+}
+
+interface Customer {
+  id: string;
+  user_id: string;
+  company_name: string;
+  domain: string;
+  contact_name: string | null;
+  contact_email: string | null;
+  industry: string | null;
+  qualification_score: number | null;
+  qualification_rationale: string | null;
+  status: 'NEW' | 'QUALIFIED' | 'CONTACTED' | 'DISQUALIFIED' | 'CUSTOMER';
+  created_at: string;
+  updated_at: string;
 }
 
 export default function App() {
-  const [status, setStatus] = useState<ConnectionStatus>('idle');
-  const [responseData, setResponseData] = useState<HealthResponse | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [latencyMs, setLatencyMs] = useState<number | null>(null);
-  const [checkedAt, setCheckedAt] = useState<string | null>(null);
+  // Backend & DB Health state
+  const [backendStatus, setBackendStatus] = useState<HealthStatus>('idle');
+  const [backendData, setBackendData] = useState<ProcessHealth | null>(null);
+  const [backendError, setBackendError] = useState<string | null>(null);
 
+  const [dbStatus, setDbStatus] = useState<HealthStatus>('idle');
+  const [dbData, setDbData] = useState<DbHealth | null>(null);
+  const [dbError, setDbError] = useState<string | null>(null);
+  const [dbLatency, setDbLatency] = useState<number | null>(null);
+
+  // Customer Data state
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customersLoading, setCustomersLoading] = useState<boolean>(false);
+  const [customersError, setCustomersError] = useState<string | null>(null);
+
+  // Search / Lookup state
+  const [searchDomain, setSearchDomain] = useState<string>('');
+  const [searchResult, setSearchResult] = useState<Customer | null>(null);
+  const [searchLoading, setSearchLoading] = useState<boolean>(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+
+  // New Customer Form state
+  const [newCompany, setNewCompany] = useState<string>('');
+  const [newDomain, setNewDomain] = useState<string>('');
+  const [newIndustry, setNewIndustry] = useState<string>('');
+  const [createLoading, setCreateLoading] = useState<boolean>(false);
+  const [createMessage, setCreateMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // 1. Check Express Process Health
   const checkBackend = async () => {
-    setStatus('loading');
-    setErrorMessage(null);
-    const startTime = performance.now();
-
+    setBackendStatus('loading');
+    setBackendError(null);
     try {
-      const response = await fetch('http://localhost:3000/api/health', {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
-      });
-
-      const elapsed = Math.round(performance.now() - startTime);
-      setLatencyMs(elapsed);
-      setCheckedAt(new Date().toLocaleTimeString());
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status} (${response.statusText})`);
-      }
-
-      const data: HealthResponse = await response.json();
-      setResponseData(data);
-      setStatus('success');
+      const res = await fetch('http://localhost:3000/api/health');
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      const data = await res.json();
+      setBackendData(data);
+      setBackendStatus('success');
     } catch (err: unknown) {
-      const elapsed = Math.round(performance.now() - startTime);
-      setLatencyMs(elapsed);
-      setCheckedAt(new Date().toLocaleTimeString());
-      setStatus('error');
-      if (err instanceof Error) {
-        setErrorMessage(err.message);
-      } else {
-        setErrorMessage('Unable to connect to backend.');
-      }
+      setBackendStatus('error');
+      setBackendError(err instanceof Error ? err.message : 'Backend unreachable');
     }
   };
 
-  const resetState = () => {
-    setStatus('idle');
-    setResponseData(null);
-    setErrorMessage(null);
-    setLatencyMs(null);
-    setCheckedAt(null);
+  // 2. Check Database Health (MySQL Connection Pool)
+  const checkDb = async () => {
+    setDbStatus('loading');
+    setDbError(null);
+    const start = performance.now();
+    try {
+      const res = await fetch('http://localhost:3000/api/health/db');
+      const elapsed = Math.round(performance.now() - start);
+      setDbLatency(elapsed);
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      const data = await res.json();
+      setDbData(data);
+      setDbStatus('success');
+    } catch (err: unknown) {
+      const elapsed = Math.round(performance.now() - start);
+      setDbLatency(elapsed);
+      setDbStatus('error');
+      setDbError(err instanceof Error ? err.message : 'Database check failed');
+    }
   };
+
+  // 3. Fetch Customers from MySQL
+  const fetchCustomers = async () => {
+    setCustomersLoading(true);
+    setCustomersError(null);
+    try {
+      const res = await fetch('http://localhost:3000/api/customers');
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      const result = await res.json();
+      setCustomers(result.data || []);
+    } catch (err: unknown) {
+      setCustomersError(err instanceof Error ? err.message : 'Failed to fetch customers');
+    } finally {
+      setCustomersLoading(false);
+    }
+  };
+
+  // 4. Parameterized Domain Lookup
+  const handleDomainSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchDomain.trim()) return;
+
+    setSearchLoading(true);
+    setSearchError(null);
+    setSearchResult(null);
+
+    try {
+      const res = await fetch(`http://localhost:3000/api/customers/lookup?domain=${encodeURIComponent(searchDomain.trim())}`);
+      if (res.status === 404) {
+        setSearchError(`No customer found with domain '${searchDomain}'`);
+        return;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      const json = await res.json();
+      setSearchResult(json.data);
+    } catch (err: unknown) {
+      setSearchError(err instanceof Error ? err.message : 'Lookup failed');
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  // 5. Create Customer in MySQL
+  const handleCreateCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCompany.trim() || !newDomain.trim()) return;
+
+    setCreateLoading(true);
+    setCreateMessage(null);
+
+    try {
+      const res = await fetch('http://localhost:3000/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyName: newCompany.trim(),
+          domain: newDomain.trim(),
+          industry: newIndustry.trim() || undefined,
+          status: 'NEW',
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.message || `Failed to create customer (HTTP ${res.status})`);
+      }
+
+      setCreateMessage({ type: 'success', text: `Created '${json.data.company_name}' (${json.data.domain}) successfully!` });
+      setNewCompany('');
+      setNewDomain('');
+      setNewIndustry('');
+      // Refresh list
+      fetchCustomers();
+    } catch (err: unknown) {
+      setCreateMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Unable to create customer',
+      });
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  // Auto-load customers on mount if possible
+  useEffect(() => {
+    fetchCustomers();
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-8 font-sans selection:bg-indigo-500 selection:text-white">
-      {/* Background ambient glow */}
+      {/* Background ambient lighting */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
         <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-600/15 rounded-full blur-3xl"></div>
-        <div className="absolute top-1/3 -right-40 w-96 h-96 bg-cyan-600/10 rounded-full blur-3xl"></div>
+        <div className="absolute top-1/2 -right-40 w-96 h-96 bg-cyan-600/10 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-10 left-1/3 w-80 h-80 bg-emerald-600/10 rounded-full blur-3xl"></div>
       </div>
 
-      <div className="relative z-10 max-w-4xl w-full mx-auto space-y-8">
+      <div className="relative z-10 max-w-5xl w-full mx-auto space-y-8">
         {/* Header */}
         <header className="border-b border-slate-800 pb-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-3">
-                <span className="inline-block w-3 h-3 rounded-full bg-indigo-500 animate-pulse"></span>
+                <span className="inline-block w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></span>
                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
                   AI Workforce Platform
                 </h1>
               </div>
               <p className="mt-1 text-sm text-slate-400">
-                Phase 3 — Basic React + Express Application
+                Phase 4 — MySQL Database Integration (Persistent Structured Data)
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="px-3 py-1 text-xs font-medium rounded-full bg-indigo-950/80 border border-indigo-500/30 text-indigo-300">
-                Milestone 3.3
+              <span className="px-3 py-1 text-xs font-medium rounded-full bg-emerald-950/80 border border-emerald-500/30 text-emerald-300">
+                MySQL 8.4
               </span>
-              <span className="px-3 py-1 text-xs font-medium rounded-full bg-slate-800/80 border border-slate-700 text-slate-300">
-                Port 5173 ↔ 3000
+              <span className="px-3 py-1 text-xs font-medium rounded-full bg-indigo-950/80 border border-indigo-500/30 text-indigo-300">
+                Database: ai_workforce
               </span>
             </div>
           </div>
         </header>
 
-        {/* Main interactive panel */}
-        <main className="space-y-6">
-          <section className="bg-slate-900/60 backdrop-blur-md rounded-2xl border border-slate-800 p-6 sm:p-8 shadow-xl">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-6">
+        {/* Section 1: Health Checks & Connectivity */}
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Card A: Express Backend Health */}
+          <div className="bg-slate-900/60 backdrop-blur-md rounded-2xl border border-slate-800 p-5 shadow-lg flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono uppercase tracking-wider text-slate-400">Layer 1</span>
+                <span className="text-xs text-slate-500 font-mono">GET /api/health</span>
+              </div>
+              <h2 className="text-base font-semibold text-white mt-1">Express HTTP Server</h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Verifies that the Node.js Express process is active on port 3000.
+              </p>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-white">Backend Connection</h2>
-                <p className="text-sm text-slate-400 mt-0.5">
-                  Verify HTTP communication between Vite/React client and Express server
-                </p>
-              </div>
-
-              <div className="flex items-center gap-3">
-                {status !== 'idle' && (
-                  <button
-                    type="button"
-                    onClick={resetState}
-                    className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-                  >
-                    Reset
-                  </button>
+                {backendStatus === 'idle' && <span className="text-xs text-slate-500">Not verified</span>}
+                {backendStatus === 'loading' && <span className="text-xs text-indigo-400 animate-pulse">Pinging...</span>}
+                {backendStatus === 'success' && (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    Status: {backendData?.status.toUpperCase()}
+                  </span>
                 )}
+                {backendStatus === 'error' && (
+                  <span className="text-xs font-medium text-rose-400">Offline: {backendError}</span>
+                )}
+              </div>
+              <button
+                type="button"
+                id="check-backend-btn"
+                onClick={checkBackend}
+                disabled={backendStatus === 'loading'}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors cursor-pointer"
+              >
+                Check Backend
+              </button>
+            </div>
+          </div>
+
+          {/* Card B: MySQL Database Health */}
+          <div className="bg-slate-900/60 backdrop-blur-md rounded-2xl border border-slate-800 p-5 shadow-lg flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono uppercase tracking-wider text-emerald-400">Layer 2</span>
+                <span className="text-xs text-slate-500 font-mono">GET /api/health/db</span>
+              </div>
+              <h2 className="text-base font-semibold text-white mt-1">MySQL Connection Pool</h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Executes a live <code className="text-emerald-400">SELECT 1</code> query across the connection pool.
+              </p>
+            </div>
+
+            <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between">
+              <div>
+                {dbStatus === 'idle' && <span className="text-xs text-slate-500">Not verified</span>}
+                {dbStatus === 'loading' && <span className="text-xs text-emerald-400 animate-pulse">Connecting to MySQL...</span>}
+                {dbStatus === 'success' && (
+                  <div className="flex flex-col">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                      Database: Connected ({dbData?.databaseName})
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      MySQL {dbData?.serverVersion} &bull; {dbLatency} ms
+                    </span>
+                  </div>
+                )}
+                {dbStatus === 'error' && (
+                  <span className="text-xs font-medium text-rose-400">Failed: {dbError}</span>
+                )}
+              </div>
+              <button
+                type="button"
+                id="check-db-btn"
+                onClick={checkDb}
+                disabled={dbStatus === 'loading'}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors cursor-pointer shadow-sm"
+              >
+                Check Database
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Section 2: Real Database Queries (Customers Table) */}
+        <section className="bg-slate-900/60 backdrop-blur-md rounded-2xl border border-slate-800 p-6 sm:p-8 shadow-xl space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-white">Customers Directory (Live MySQL Data)</h2>
+                <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 text-slate-300">
+                  table: customers
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Demonstrates parameterized SQL queries and relational persistence from Phase 1 schema.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              id="fetch-customers-btn"
+              onClick={fetchCustomers}
+              disabled={customersLoading}
+              className="px-4 py-2 rounded-xl text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-all cursor-pointer flex items-center gap-2"
+            >
+              {customersLoading ? (
+                <>
+                  <svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                  </svg>
+                  <span>Fetching...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span>Refresh Customers</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Sub-tools: Parameterized Lookup & Insert */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Tool 1: Parameterized Lookup Form */}
+            <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-3">
+              <div className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                <span>Parameterized Domain Lookup</span>
+                <code className="text-[10px] text-indigo-400">WHERE domain = ?</code>
+              </div>
+              <form onSubmit={handleDomainSearch} className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g. apexcloud.io"
+                  value={searchDomain}
+                  onChange={(e) => setSearchDomain(e.target.value)}
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
                 <button
-                  id="check-backend-btn"
-                  type="button"
-                  onClick={checkBackend}
-                  disabled={status === 'loading'}
-                  className="px-6 py-2.5 rounded-xl font-medium text-sm transition-all duration-200 shadow-md cursor-pointer disabled:cursor-not-allowed bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white disabled:opacity-60 flex items-center gap-2"
+                  type="submit"
+                  disabled={searchLoading || !searchDomain.trim()}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-50 transition-colors cursor-pointer"
                 >
-                  {status === 'loading' ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-                      </svg>
-                      <span>Checking backend...</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                      <span>Check Backend</span>
-                    </>
-                  )}
+                  {searchLoading ? 'Searching...' : 'Search'}
                 </button>
-              </div>
-            </div>
+              </form>
 
-            {/* Status Display Area */}
-            <div className="mt-6 pt-2">
-              <div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-3">
-                Connection Status
-              </div>
-
-              {status === 'idle' && (
-                <div className="p-5 rounded-xl border border-slate-800 bg-slate-950/40 text-slate-400 text-sm flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="w-2.5 h-2.5 rounded-full bg-slate-600"></span>
-                    <span>Ready to check backend health status. Click <strong>Check Backend</strong> to begin.</span>
-                  </div>
-                  <code className="hidden sm:inline-block text-xs bg-slate-900 border border-slate-800 px-2 py-1 rounded text-slate-400">
-                    GET http://localhost:3000/api/health
-                  </code>
+              {searchError && (
+                <div className="p-2.5 rounded bg-rose-950/30 border border-rose-900/50 text-rose-300 text-xs">
+                  {searchError}
                 </div>
               )}
 
-              {status === 'loading' && (
-                <div className="p-5 rounded-xl border border-indigo-900/50 bg-indigo-950/20 text-indigo-300 text-sm flex items-center gap-3 animate-pulse">
-                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-ping"></span>
-                  <span>Sending HTTP GET request to backend...</span>
-                </div>
-              )}
-
-              {status === 'success' && (
-                <div className="space-y-4">
-                  <div className="p-5 rounded-xl border border-emerald-500/30 bg-emerald-950/20 text-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <span className="w-3 h-3 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400"></span>
-                      <span id="backend-status" className="font-semibold text-base text-emerald-300">
-                        Backend Status: {responseData?.status?.toUpperCase() || 'OK'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-emerald-400/80">
-                      {latencyMs !== null && <span>Latency: {latencyMs} ms</span>}
-                      {checkedAt && <span>Checked at: {checkedAt}</span>}
-                      <span className="px-2 py-0.5 rounded bg-emerald-900/50 border border-emerald-700/50 text-emerald-300 font-mono">
-                        200 OK
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Raw response payload card */}
-                  <div className="rounded-xl border border-slate-800 bg-slate-950/80 p-4">
-                    <div className="text-xs font-mono text-slate-400 mb-2 flex items-center justify-between">
-                      <span>Response Payload:</span>
-                      <span className="text-slate-500">application/json</span>
-                    </div>
-                    <pre className="text-xs font-mono text-indigo-300 overflow-x-auto p-2 bg-slate-900/50 rounded-lg">
-                      {JSON.stringify(responseData, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              )}
-
-              {status === 'error' && (
-                <div className="space-y-4">
-                  <div className="p-5 rounded-xl border border-rose-500/30 bg-rose-950/20 text-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <span className="w-3 h-3 rounded-full bg-rose-500 shadow-sm shadow-rose-500"></span>
-                      <span id="backend-status" className="font-semibold text-base text-rose-300">
-                        Unable to connect to backend.
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-rose-400/80">
-                      {checkedAt && <span>Failed at: {checkedAt}</span>}
-                      <span className="px-2 py-0.5 rounded bg-rose-900/50 border border-rose-700/50 text-rose-300 font-mono">
-                        Connection Failed
-                      </span>
-                    </div>
-                  </div>
-
-                  {errorMessage && (
-                    <div className="p-4 rounded-xl border border-slate-800 bg-slate-950/60 text-xs text-slate-400 space-y-2">
-                      <div className="font-mono text-rose-400">Error: {errorMessage}</div>
-                      <p className="text-slate-400">
-                        Troubleshooting checklist:
-                      </p>
-                      <ul className="list-disc list-inside space-y-1 text-slate-500">
-                        <li>Is the Express server running on port 3000? (<code className="text-slate-400">node dist/server.js</code>)</li>
-                        <li>Does the server permit CORS requests from origin <code className="text-slate-400">http://localhost:5173</code>?</li>
-                        <li>Check your terminal logs in <code className="text-slate-400">server/</code> for any thrown exceptions.</li>
-                      </ul>
-                    </div>
+              {searchResult && (
+                <div className="p-3 rounded-lg bg-indigo-950/30 border border-indigo-800/40 text-xs space-y-1">
+                  <div className="font-semibold text-indigo-200">{searchResult.company_name}</div>
+                  <div className="text-slate-400 text-[11px]">Domain: <span className="font-mono text-slate-300">{searchResult.domain}</span> &bull; Industry: {searchResult.industry || 'N/A'}</div>
+                  <div className="text-slate-400 text-[11px]">Status: <span className="text-emerald-400 font-medium">{searchResult.status}</span> &bull; Score: {searchResult.qualification_score ?? 'N/A'}</div>
+                  {searchResult.qualification_rationale && (
+                    <div className="text-slate-400 text-[11px] italic mt-1">"{searchResult.qualification_rationale}"</div>
                   )}
                 </div>
               )}
             </div>
-          </section>
 
-          {/* Architecture flow diagram */}
-          <section className="bg-slate-900/40 rounded-2xl border border-slate-800/80 p-6 sm:p-8">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-4">
-              Phase 3 Architecture Flow
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-              <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
-                <span className="text-xs font-mono text-indigo-400 mb-1">FRONTEND</span>
-                <span className="font-semibold text-sm text-slate-200">React + TypeScript</span>
-                <span className="text-xs text-slate-500 mt-1">Vite Dev Server (:5173)</span>
-                <div className="mt-3 text-xs text-indigo-300 bg-indigo-950/50 border border-indigo-800/50 px-2 py-1 rounded">
-                  fetch('/api/health')
-                </div>
+            {/* Tool 2: Add Customer Form */}
+            <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-3">
+              <div className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                <span>Add Customer Record</span>
+                <code className="text-[10px] text-emerald-400">INSERT INTO customers</code>
               </div>
-
-              <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center justify-center">
-                <span className="text-xs font-mono text-cyan-400 mb-1">COMMUNICATION</span>
-                <span className="font-semibold text-sm text-slate-200">HTTP REST / JSON</span>
-                <span className="text-xs text-slate-500 mt-1">CORS Allowed</span>
-                <div className="mt-3 text-xs text-cyan-300 bg-cyan-950/50 border border-cyan-800/50 px-2 py-1 rounded font-mono">
-                  GET ↔ JSON
+              <form onSubmit={handleCreateCustomer} className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Company Name *"
+                    required
+                    value={newCompany}
+                    onChange={(e) => setNewCompany(e.target.value)}
+                    className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="domain.com *"
+                    required
+                    value={newDomain}
+                    onChange={(e) => setNewDomain(e.target.value)}
+                    className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  />
                 </div>
-              </div>
-
-              <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
-                <span className="text-xs font-mono text-emerald-400 mb-1">BACKEND</span>
-                <span className="font-semibold text-sm text-slate-200">Express + TypeScript</span>
-                <span className="text-xs text-slate-500 mt-1">Node.js Server (:3000)</span>
-                <div className="mt-3 text-xs text-emerald-300 bg-emerald-950/50 border border-emerald-800/50 px-2 py-1 rounded font-mono">
-                  {`{ "status": "ok" }`}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Industry (e.g. Fintech)"
+                    value={newIndustry}
+                    onChange={(e) => setNewIndustry(e.target.value)}
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={createLoading || !newCompany.trim() || !newDomain.trim()}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 transition-colors cursor-pointer"
+                  >
+                    {createLoading ? 'Saving...' : 'Add'}
+                  </button>
                 </div>
+              </form>
+
+              {createMessage && (
+                <div
+                  className={`p-2.5 rounded text-xs border ${
+                    createMessage.type === 'success'
+                      ? 'bg-emerald-950/30 border-emerald-800/40 text-emerald-300'
+                      : 'bg-rose-950/30 border-rose-800/40 text-rose-300'
+                  }`}
+                >
+                  {createMessage.text}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Customers Table Display */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span>Records in Database: <strong className="text-slate-200">{customers.length}</strong></span>
+              {customersError && <span className="text-rose-400">{customersError}</span>}
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 bg-slate-900/60 text-slate-400 font-mono text-[11px]">
+                    <th className="p-3">Company</th>
+                    <th className="p-3">Domain</th>
+                    <th className="p-3">Industry</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Qual. Score</th>
+                    <th className="p-3">Created</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {customers.map((c) => (
+                    <tr key={c.id} className="hover:bg-slate-900/40 transition-colors">
+                      <td className="p-3 font-medium text-white">{c.company_name}</td>
+                      <td className="p-3 font-mono text-indigo-300">{c.domain}</td>
+                      <td className="p-3 text-slate-400">{c.industry || '—'}</td>
+                      <td className="p-3">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            c.status === 'QUALIFIED'
+                              ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-600/30'
+                              : c.status === 'CONTACTED'
+                              ? 'bg-amber-950/80 text-amber-300 border border-amber-600/30'
+                              : 'bg-slate-800 text-slate-300 border border-slate-700'
+                          }`}
+                        >
+                          {c.status}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        {c.qualification_score !== null ? (
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-slate-200">{c.qualification_score}</span>
+                            <div className="w-12 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-emerald-500 rounded-full"
+                                style={{ width: `${Math.min(c.qualification_score, 100)}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-slate-600">—</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-slate-500 text-[11px]">
+                        {new Date(c.created_at).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
+                  {customers.length === 0 && !customersLoading && (
+                    <tr>
+                      <td colSpan={6} className="p-6 text-center text-slate-500">
+                        No customer records found. Click "Refresh Customers" or add one using the form above.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        {/* Section 3: Architecture Diagram */}
+        <section className="bg-slate-900/40 rounded-2xl border border-slate-800/80 p-6 sm:p-8">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-4">
+            Phase 4 Full-Stack Data Pipeline
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-center">
+            <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
+              <span className="text-[10px] font-mono text-indigo-400 mb-1">CLIENT UI</span>
+              <span className="font-semibold text-xs text-slate-200">React + Vite</span>
+              <span className="text-[11px] text-slate-500 mt-1">Port 5173</span>
+              <div className="mt-3 text-[10px] text-indigo-300 bg-indigo-950/50 border border-indigo-800/50 px-2 py-0.5 rounded">
+                fetch('/api/customers')
               </div>
             </div>
-          </section>
-        </main>
+
+            <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
+              <span className="text-[10px] font-mono text-cyan-400 mb-1">API ROUTER</span>
+              <span className="font-semibold text-xs text-slate-200">Express Router</span>
+              <span className="text-[11px] text-slate-500 mt-1">Port 3000</span>
+              <div className="mt-3 text-[10px] text-cyan-300 bg-cyan-950/50 border border-cyan-800/50 px-2 py-0.5 rounded">
+                customerRoutes.ts
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
+              <span className="text-[10px] font-mono text-amber-400 mb-1">SERVICE LAYER</span>
+              <span className="font-semibold text-xs text-slate-200">Parameterized Queries</span>
+              <span className="text-[11px] text-slate-500 mt-1">mysql2/promise pool</span>
+              <div className="mt-3 text-[10px] text-amber-300 bg-amber-950/50 border border-amber-800/50 px-2 py-0.5 rounded font-mono">
+                WHERE domain = ?
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
+              <span className="text-[10px] font-mono text-emerald-400 mb-1">DATABASE</span>
+              <span className="font-semibold text-xs text-slate-200">MySQL 8.4 Engine</span>
+              <span className="text-[11px] text-slate-500 mt-1">ai_workforce DB</span>
+              <div className="mt-3 text-[10px] text-emerald-300 bg-emerald-950/50 border border-emerald-800/50 px-2 py-0.5 rounded font-mono">
+                7 Tables Verified
+              </div>
+            </div>
+          </div>
+        </section>
 
         {/* Footer */}
         <footer className="text-center text-xs text-slate-500 pt-4 border-t border-slate-800/80">
-          AI Workforce Platform &bull; Built with React, Vite, Express, TypeScript &bull; Ready for Phase 4 (MySQL Database Integration)
+          AI Workforce Platform &bull; Phase 4: MySQL Integration Complete &bull; Ready for Phase 5: Redis
         </footer>
       </div>
     </div>
