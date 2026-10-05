@@ -3,11 +3,12 @@
 -- Phase 1 Deliverable: Data Model Definition
 -- ==============================================================================
 
-CREATE DATABASE IF NOT EXISTS ai_workforce_platform
+CREATE DATABASE IF NOT EXISTS ai_workforce
   CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
 
-USE ai_workforce_platform;
+USE ai_workforce;
+
 
 -- 1. Users Table
 CREATE TABLE IF NOT EXISTS users (

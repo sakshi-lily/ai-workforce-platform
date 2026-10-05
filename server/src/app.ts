@@ -1,5 +1,7 @@
-import express, { Request, Response } from "express";
+import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
+import { healthRouter } from "./routes/healthRoutes";
+import { customerRouter } from "./routes/customerRoutes";
 
 export const app = express();
 
@@ -14,7 +16,28 @@ app.use(
 
 app.use(express.json());
 
-// Health check endpoint (Phase 3 milestone requirement)
-app.get("/api/health", (_req: Request, res: Response) => {
-  res.status(200).json({ status: "ok" });
+// Mount routers
+app.use("/api/health", healthRouter);
+app.use("/api/customers", customerRouter);
+
+// Catch-all 404 handler
+app.use((_req: Request, res: Response) => {
+  res.status(404).json({
+    status: "error",
+    message: "Endpoint not found",
+  });
+});
+
+// Centralized error handler preventing internal DB error leakage
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  console.error("[Server Error]", err);
+  const message =
+    err instanceof Error && process.env.NODE_ENV === "development"
+      ? err.message
+      : "Internal server error occurred";
+
+  res.status(500).json({
+    status: "error",
+    message,
+  });
 });
