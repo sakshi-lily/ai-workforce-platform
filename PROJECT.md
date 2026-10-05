@@ -137,11 +137,211 @@ When a user initiates or schedules a task on the platform, they can provide the 
 
 ## 5. Expected Output
 
+Upon executing or concluding an AI task, the platform generates a comprehensive response payload and UI presentation containing the following components:
+
+### 1. Task Execution Status
+- **Lifecycle State:** The operational state of the task (e.g., `Completed`, `Awaiting Human Approval`, `Partially Completed`, `Failed`, or `Timed Out`).
+- **Execution Telemetry:** Execution timing details (start time, completion time, duration) and step counts (subtasks completed, tool calls invoked).
+
+### 2. Executive Summary
+- **Human-Readable Synthesis:** A concise narrative overview outlining the primary objective, what subtasks were completed, key findings or outcomes, and any critical recommendations.
+
+### 3. Structured Results
+- **Organized Datasets:** Formatted tables or structured records capturing the core output of the task (e.g., table of verified leads with qualification scores, list of diagnosed log anomalies, or vendor feature comparison matrix).
+- **Downloadable Artifacts:** Directly exportable files in common formats (e.g., CSV, JSON, Markdown, or PDF) for external sharing and record-keeping.
+
+### 4. Sources & Data Provenance
+- **Full Attribution Log:** An auditable index of all internal and external data points consulted during task execution:
+  - External web URLs searched and scraped.
+  - Internal database tables, record IDs, and schemas queried (e.g., MySQL customer rows).
+  - Internal knowledge base documents, documentation pages, or repository files referenced.
+- **Fact Citation:** Mapping that links specific findings or conclusions back to their source material for easy human verification.
+
+### 5. Bounded Decisions & Reasoning Log
+- **Transparent Decision-Making:** Explicit documentation of why specific choices were made at branching points (e.g., why a lead was qualified or disqualified against the ICP, why a particular dependency version was recommended).
+- **Confidence & Scoring:** Confidence indicators or fit scores accompanying critical recommendations.
+
+### 6. Actions Taken
+- **Side-Effect Audit Log:** A chronological ledger of all non-destructive or pre-authorized actions performed autonomously by the system (e.g., records retrieved, drafts generated, internal logs recorded, test queries executed).
+- **Execution Timestamps & IDs:** Precise timestamps and external reference IDs for each completed action.
+
+### 7. Actions Requiring Approval
+- **Pending Action Queue:** A dedicated section displaying high-impact operations awaiting human sign-off before dispatch (e.g., prepared Gmail outreach emails, database write/update operations, GitHub pull request merges).
+- **Action Preview & Context:** Rich preview cards showing exact details (e.g., recipient address, email subject and body, proposed SQL update statements, target branches).
+- **Interactive Controls:** Explicit triggers for the user to `Approve & Execute`, `Edit & Approve`, or `Reject & Cancel` the pending action.
+
+### 8. Errors, Warnings, and Fallbacks
+- **Non-Fatal Warnings:** Highlights of non-critical issues encountered (e.g., rate-limited external endpoints, unparseable web pages, missing optional fields).
+- **Error Diagnostics:** In the event of task interruption or failure, a clear explanation of what failed, the subtask in progress, and suggested user remediation steps.
+
+### 9. Final Comprehensive Report
+- **Stakeholder-Ready Deliverable:** A unified, polished markdown or PDF report compiling the executive summary, methodology, structured results, decision highlights, and next steps ready for immediate team or leadership presentation.
+
 ## 6. AI Agent Responsibilities
+
+The AI Agent acts as an intelligent reasoning and orchestration engine within the platform. To ensure safety, reliability, and auditability, a strict separation is maintained between what the agent is responsible for executing and what is explicitly governed by application-level controls.
+
+### What the AI Agent IS Responsible For
+
+1. **Understanding High-Level Goals:**
+   - Ingesting natural-language task instructions and extracting core objectives, explicit constraints, target entities, and success criteria.
+
+2. **Subtask Decomposition & Execution Planning:**
+   - Breaking down complex, multi-step goals into a structured sequence of discrete, actionable subtasks (e.g., search $\rightarrow$ verify $\rightarrow$ qualify $\rightarrow$ draft $\rightarrow$ request approval $\rightarrow$ report).
+
+3. **Tool Selection & Strategy:**
+   - Evaluating available system-provided tools and integrations, determining which tool is appropriate for each step, and selecting optimal parameters for tool invocation.
+
+4. **Information Retrieval via Governed Tools:**
+   - Requesting context, records, and search results by invoking registered application tools (e.g., web search, database query interfaces, knowledge base searches).
+
+5. **Data Synthesis & Analysis:**
+   - Evaluating retrieved information against user constraints and business logic (e.g., cross-referencing prospective leads against existing client records to detect duplicates).
+
+6. **Bounded Decision-Making:**
+   - Making localized, rule-governed decisions within defined guardrails (e.g., scoring lead qualification criteria, categorizing customer feedback sentiment, prioritizing log anomalies).
+
+7. **Maintaining Task Progress & State Awareness:**
+   - Tracking progress across subtasks, identifying completed steps, handling non-fatal retries upon transient tool errors, and maintaining contextual continuity throughout execution.
+
+8. **Producing Structured Results & Reports:**
+   - Formatting output into structured records (tables, JSON artifacts) and authoring executive summary reports with clear source attributions and decision rationales.
+
+9. **Gating Actions Behind Human Approval:**
+   - Identifying operations that produce external side effects or system mutations (e.g., sending emails, updating database rows, merging code), generating rich previews of the intended action, and explicitly pausing execution until human approval is received.
+
+---
+
+### What the AI Agent IS NOT Responsible For (System Boundaries & Safety Constraints)
+
+To prevent security vulnerabilities, unpredictable behaviors, and data corruption, the agent operates under strict platform boundaries:
+
+1. **No Direct Database Bypassing:**
+   - The LLM does not execute arbitrary raw SQL or maintain direct database connections. All data access must pass through governed application adapters and predefined API boundaries with parameterized queries and strict row-level access control.
+
+2. **No Authentication or Authorization Bypass:**
+   - The agent cannot elevate user privileges, forge credentials, or access tools and data sources that the calling user is not explicitly permitted to access. Multi-tenant isolation and role-based access control (RBAC) are enforced by the platform host, never delegated to the agent's discretion.
+
+3. **No Unapproved Side-Effects or Mutation Execution:**
+   - The agent cannot autonomously dispatch external communications (e.g., sending emails via Gmail, posting to public channels) or alter production data without explicit human approval when governance policies dictate.
+
+4. **No Unchecked Autonomous Scope Expansion:**
+   - The agent is restricted to the bounded domain of the user's specific task. It cannot autonomously spawn unrelated background workflows, modify platform configuration, or reconfigure its own operational boundaries.
+
+5. **No Blind Trust in External Data (Prompt Injection Defense):**
+   - The agent treats all data retrieved from external sources (web pages, third-party emails, raw logs) as untrusted content, preventing indirect prompt injection attacks from overriding system instructions or approval requirements.
 
 ## 7. Tools and Integrations
 
+The platform orchestrates a suite of specialized tools, databases, and external integrations to execute tasks safely and effectively. The roles and boundaries of each component are outlined below:
+
+### 1. MySQL (Relational Database)
+- **What it does:** Provides persistent, ACID-compliant relational storage for structured system entities, operational records, and business data.
+- **Why the platform needs it:** To store and manage critical stateful records, including user accounts, task definitions, execution history, subtask states, prospect and customer profiles, audit trails, and human approval queues.
+- **Type of information / action provided:**
+  - *Information:* Customer/lead profiles, previous interaction histories, user credentials/permissions, task execution metadata, and approval statuses.
+  - *Actions:* Structured relational queries (e.g., verifying if a prospect already exists in the customer database), inserting newly discovered leads, updating task statuses, and logging execution metrics.
+
+### 2. Redis (In-Memory Data Store & Cache)
+- **What it does:** Serves as a high-speed, in-memory key-value database and pub/sub message broker.
+- **Why the platform needs it:** Long-running AI agent workflows require asynchronous task queueing, transient state synchronization between worker processes, API rate-limiting enforcement, and low-latency pub/sub event delivery for real-time UI updates.
+- **Type of information / action provided:**
+  - *Information:* Ephemeral agent scratchpad memory, active worker heartbeat data, rate-limit counters, and cached third-party API responses.
+  - *Actions:* Enqueuing and dequeuing background jobs, acquiring distributed locks during concurrent subtask runs, caching frequent queries, and broadcasting live task progress events to the client interface.
+
+### 3. Web Search (External Search Engine Integration)
+- **What it does:** Connects to specialized web search APIs (such as Google Search API, Bing Web Search, or Tavily) to execute public internet discovery queries and scrape target web page content.
+- **Why the platform needs it:** AI models operate with static cutoff dates and lack access to real-time company facts, recent software advisories, active domain contacts, or changing vendor pricing. Web search provides live, external context.
+- **Type of information / action provided:**
+  - *Information:* Search engine result pages (SERPs), snippet previews, target website URLs, and raw text extracted from relevant public web pages.
+  - *Actions:* Programmatic search query execution, web page text extraction, and domain-targeted research.
+
+### 4. Qdrant / Vector Database
+- **What it does:** Stores, indexes, and performs high-speed similarity search over high-dimensional vector embeddings with metadata filtering.
+- **Why the platform needs it:** Relational keyword matching is insufficient for unstructured content like corporate wikis, compliance guides, past project post-mortems, or user feedback. A vector database enables semantic search based on conceptual meaning.
+- **Type of information / action provided:**
+  - *Information:* Semantic similarity rankings, embedded text chunks, associated document metadata (source document, category, author), and vector distance scores.
+  - *Actions:* Vector insertion and indexing (upserting document embeddings), approximate nearest neighbor (ANN) similarity queries, and metadata-filtered semantic retrieval.
+
+### 5. RAG (Retrieval-Augmented Generation Pipeline)
+- **What it does:** Orchestrates the end-to-end ingestion, chunking, embedding, retrieval, reranking, and prompt injection of proprietary organizational knowledge into the LLM context.
+- **Why the platform needs it:** Keeps AI responses accurate, grounded in company-specific policies (such as internal Ideal Customer Profiles, SLA criteria, and coding guidelines), and drastically mitigates factual hallucinations.
+- **Type of information / action provided:**
+  - *Information:* Curated, context-relevant document excerpts, relevance confidence scores, and source citations.
+  - *Actions:* Text document ingestion and chunking, embedding generation, context reranking, and dynamic prompt assembly before LLM invocation.
+
+### 6. Gmail Integration (Email Communications)
+- **What it does:** Interfaces securely with Google Workspace / Gmail APIs for drafting, previewing, and transmitting email communications.
+- **Why the platform needs it:** Multi-step workflows (such as qualified lead outreach, stakeholder status reporting, and automated blocker reminders) require interacting directly with business email channels.
+- **Type of information / action provided:**
+  - *Information:* Email thread history, recipient contact metadata, draft status, and message transmission receipts.
+  - *Actions:* Generating draft email messages, rendering formatted email previews for human inspection, and dispatching finalized emails upon receiving explicit human sign-off.
+
+### 7. LLM / AI API (Cognitive Intelligence Engine)
+- **What it does:** Connects to state-of-the-art foundation models (such as Google Gemini, OpenAI, or Anthropic Claude) through structured API interfaces for natural language understanding, reasoning, and generation.
+- **Why the platform needs it:** Provides the foundational cognitive intelligence to decompose complex tasks, select appropriate tools, synthesize information from heterogeneous sources, formulate bounded decisions, and author professional reports.
+- **Type of information / action provided:**
+  - *Information:* Text completions, structured JSON payloads complying with schemas, reasoning traces, intent classifications, and content summaries.
+  - *Actions:* Structured tool/function invocation proposals, natural-language generation, document summarization, and vector embedding calculations.
+
 ## 8. Human Approval
+
+A core architectural principle of the AI Workforce Platform is **Governed Autonomy through Human-in-the-Loop (HITL)**. The system enables the AI agent to move quickly on research and synthesis while enforcing a hard barrier between internal staging and external, irreversible real-world actions.
+
+---
+
+### Operational Classifications: Autonomous vs. Gated Operations
+
+| Operation Category | Autonomy Level | Description | Platform Behavior |
+| :--- | :--- | :--- | :--- |
+| **1. Read & Search Operations** | **Autonomous** | Querying public search engines, web scraping, reading MySQL tables, fetching documents from Qdrant/vector storage, inspecting system logs. | Executes immediately without human intervention; results are cached and logged to the task audit trail. |
+| **2. Analysis & Synthesis Operations** | **Autonomous** | Parsing scraped content, qualifying leads against criteria, deduplicating records, scoring candidate fit, detecting anomalies. | Executes immediately; decision rationale and intermediate scores are documented in the reasoning log. |
+| **3. Drafting & Staging Operations** | **Autonomous** | Authoring email subjects and bodies, generating SQL update diffs, preparing pull request descriptions, formatting reports. | Drafts are staged in the application database; no external destination is contacted, and no live records are mutated. |
+| **4. External Side-Effect Actions** | **Strictly Gated** | Dispatching outbound emails (Gmail), committing database writes/updates, merging code pull requests, posting to public channels. | Execution pauses immediately; the agent submits an approval request to the user with a complete action preview and awaits explicit sign-off. |
+
+---
+
+### The Gmail Workflow as the Reference Example
+
+The distinction between internal preparation and external side-effects is demonstrated in the end-to-end lead outreach workflow:
+
+1. **Step 1 — Search (Autonomous):** The agent calls the Web Search tool to find prospective target companies and contact profiles.
+2. **Step 2 — Read & Verify (Autonomous):** The agent issues a read query to the MySQL database to verify that the prospect is not an existing client or previously contacted lead.
+3. **Step 3 — Analysis (Autonomous):** The agent evaluates the candidate against internal Ideal Customer Profile (ICP) guidelines retrieved via RAG.
+4. **Step 4 — Drafting (Autonomous):** The agent generates a personalized outreach email message tailored to the prospect's business context.
+5. **Step 5 — Approval Gate (EXECUTION PAUSES):**
+   - The platform creates a pending approval item in the UI.
+   - The user is presented with a clear preview card displaying:
+     - Target recipient (name, role, email address).
+     - Subject line and full generated body copy.
+     - Prospect qualification score and research source citations.
+     - Decision rationale explaining why this prospect was selected.
+   - The user can select: **Approve & Send**, **Edit & Send**, or **Reject**.
+6. **Step 6 — Side-Effect Execution (Only Upon Approval):**
+   - Only after receiving explicit human confirmation does the system call the Gmail API to transmit the message.
+   - If the user edits the message, the modified version is sent.
+   - If the user rejects the action, the email is discarded, and the task log records the rejection.
+
+---
+
+### Why Sending an Email Requires Human Approval in the Initial System
+
+Requiring human authorization before sending emails is a non-negotiable safeguard in the initial system for several critical reasons:
+
+1. **Brand Reputation & Relationship Protection:**
+   - Outbound emails represent the organization directly to prospective clients, partners, and stakeholders. An unvetted email containing hallucinated facts, inaccurate pricing, or tone-deaf phrasing causes immediate, irreversible damage to company credibility.
+
+2. **Domain Deliverability & Spam Mitigation:**
+   - Autonomous, unmonitored email generation runs the risk of sending repetitive or non-compliant outreach that triggers recipient spam reports, resulting in domain blacklisting and lasting deliverability penalties across the organization.
+
+3. **Contextual Nuance & Hidden Business Context:**
+   - LLMs lack awareness of sensitive, unrecorded business contexts (e.g., informal conversations, active legal disputes, executive relationships, or sensitive ongoing negotiations) that exist outside the indexed database.
+
+4. **Regulatory and Legal Compliance:**
+   - Commercial communications are subject to strict anti-spam regulations (e.g., CAN-SPAM in the US, GDPR in the EU, CASL in Canada). Human review ensures every message contains legitimate business identification, appropriate disclosure, and compliant opt-out mechanisms.
+
+5. **Trust Calibration and Quality Baseline:**
+   - In early operational phases, human review provides essential visibility into model performance, allowing teams to verify prompt quality, evaluate lead qualification logic, and establish confidence in the platform's outputs before considering higher levels of autonomy.
 
 ## 9. Data to Store
 
