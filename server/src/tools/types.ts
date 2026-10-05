@@ -19,6 +19,7 @@ export interface ToolContext {
   organizationId?: string;
   taskId: string;
   stepId?: string;
+  logger?: (msg: string) => void;
 }
 
 /**
