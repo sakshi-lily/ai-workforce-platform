@@ -7,22 +7,24 @@ import {
 
 export const customerRouter = Router();
 
-// GET /api/customers - List all customers
+// GET /api/customers - List all customers with Cache-Aside metadata
 customerRouter.get("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const limit = req.query.limit ? Number(req.query.limit) : 20;
-    const customers = await getAllCustomers(limit);
+    const result = await getAllCustomers(limit);
     res.status(200).json({
       status: "success",
-      count: customers.length,
-      data: customers,
+      source: result.source, // "cache" (HIT) or "database" (MISS)
+      latencyMs: result.latencyMs,
+      count: result.data.length,
+      data: result.data,
     });
   } catch (error) {
     next(error);
   }
 });
 
-// GET /api/customers/lookup?domain=example.com - Parameterized lookup
+// GET /api/customers/lookup?domain=example.com - Parameterized lookup with Cache-Aside
 customerRouter.get("/lookup", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const domain = req.query.domain as string;
@@ -34,25 +36,29 @@ customerRouter.get("/lookup", async (req: Request, res: Response, next: NextFunc
       return;
     }
 
-    const customer = await getCustomerByDomain(domain);
-    if (!customer) {
+    const result = await getCustomerByDomain(domain);
+    if (!result.data) {
       res.status(404).json({
         status: "not_found",
         message: `No customer found with domain '${domain}'`,
+        source: result.source,
+        latencyMs: result.latencyMs,
       });
       return;
     }
 
     res.status(200).json({
       status: "success",
-      data: customer,
+      source: result.source,
+      latencyMs: result.latencyMs,
+      data: result.data,
     });
   } catch (error) {
     next(error);
   }
 });
 
-// POST /api/customers - Insert new customer with parameter validation
+// POST /api/customers - Insert new customer with parameter validation and cache invalidation
 customerRouter.post("/", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { companyName, domain, contactName, contactEmail, industry, status } = req.body;
@@ -84,7 +90,7 @@ customerRouter.post("/", async (req: Request, res: Response, next: NextFunction)
 
     res.status(201).json({
       status: "success",
-      message: "Customer record created successfully.",
+      message: "Customer record created and cache invalidated successfully.",
       data: created,
     });
   } catch (error: unknown) {

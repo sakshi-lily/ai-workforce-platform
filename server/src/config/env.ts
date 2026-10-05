@@ -17,4 +17,10 @@ export const config = {
     waitForConnections: true,
     queueLimit: 0,
   },
+  redis: {
+    host: process.env.REDIS_HOST || "127.0.0.1",
+    port: Number(process.env.REDIS_PORT) || 6379,
+    password: process.env.REDIS_PASSWORD || undefined,
+    ttlSeconds: Number(process.env.REDIS_TTL_SECONDS) || 60,
+  },
 };

@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { RowDataPacket, ResultSetHeader } from "mysql2/promise";
 import { pool } from "../db/pool";
+import { getCache, setCache, delCachePattern } from "../cache/redis";
 
 export interface Customer {
   id: string;
@@ -25,6 +26,12 @@ export interface CreateCustomerInput {
   contactEmail?: string;
   industry?: string;
   status?: "NEW" | "QUALIFIED" | "CONTACTED" | "DISQUALIFIED" | "CUSTOMER";
+}
+
+export interface QueryResult<T> {
+  data: T;
+  source: "cache" | "database";
+  latencyMs: number;
 }
 
 const DEFAULT_DEMO_USER_ID = "usr_phase4_seed_001";
@@ -123,10 +130,28 @@ export async function ensureSeedData(): Promise<void> {
 }
 
 /**
- * Fetch all customers using parameterized limit.
+ * Fetch all customers using the Cache-Aside pattern:
+ * 1. Check Redis cache key: `customers:list:${safeLimit}`
+ * 2. On Cache HIT -> return cached data immediately
+ * 3. On Cache MISS -> query MySQL, store in Redis with TTL (60s), return data
  */
-export async function getAllCustomers(limit: number = 20): Promise<Customer[]> {
+export async function getAllCustomers(limit: number = 20): Promise<QueryResult<Customer[]>> {
   const safeLimit = Math.min(Math.max(1, limit), 100);
+  const cacheKey = `customers:list:limit:${safeLimit}`;
+  const start = performance.now();
+
+  // 1. Try Cache Read
+  const cached = await getCache<Customer[]>(cacheKey);
+  if (cached) {
+    const elapsed = Math.round(performance.now() - start);
+    return {
+      data: cached,
+      source: "cache",
+      latencyMs: elapsed,
+    };
+  }
+
+  // 2. Cache MISS: Query MySQL
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT id, user_id, company_name, domain, contact_name, contact_email, 
             industry, qualification_score, qualification_rationale, status, created_at, updated_at
@@ -136,15 +161,40 @@ export async function getAllCustomers(limit: number = 20): Promise<Customer[]> {
     [safeLimit]
   );
 
-  return rows as Customer[];
+  const customers = rows as Customer[];
+  const elapsed = Math.round(performance.now() - start);
+
+  // 3. Write to Redis with TTL
+  await setCache(cacheKey, customers);
+
+  return {
+    data: customers,
+    source: "database",
+    latencyMs: elapsed,
+  };
 }
 
 /**
- * Parameterized query demonstrating domain search.
- * Protects against SQL injection by binding values.
+ * Parameterized query demonstrating domain search with Cache-Aside pattern:
+ * Key: `customers:domain:${normalizedDomain}`
  */
-export async function getCustomerByDomain(domain: string): Promise<Customer | null> {
+export async function getCustomerByDomain(domain: string): Promise<QueryResult<Customer | null>> {
   const normalizedDomain = domain.trim().toLowerCase();
+  const cacheKey = `customers:domain:${normalizedDomain}`;
+  const start = performance.now();
+
+  // 1. Try Cache Read
+  const cached = await getCache<Customer>(cacheKey);
+  if (cached) {
+    const elapsed = Math.round(performance.now() - start);
+    return {
+      data: cached,
+      source: "cache",
+      latencyMs: elapsed,
+    };
+  }
+
+  // 2. Cache MISS: Query MySQL with parameterized binding
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT id, user_id, company_name, domain, contact_name, contact_email, 
             industry, qualification_score, qualification_rationale, status, created_at, updated_at
@@ -154,14 +204,25 @@ export async function getCustomerByDomain(domain: string): Promise<Customer | nu
     [normalizedDomain]
   );
 
-  if (rows.length === 0) {
-    return null;
+  const customer = (rows.length > 0 ? rows[0] : null) as Customer | null;
+  const elapsed = Math.round(performance.now() - start);
+
+  // 3. Cache positive results in Redis
+  if (customer) {
+    await setCache(cacheKey, customer);
   }
-  return rows[0] as Customer;
+
+  return {
+    data: customer,
+    source: "database",
+    latencyMs: elapsed,
+  };
 }
 
 /**
  * Inserts a customer record with validated, parameterized inputs.
+ * Crucial Cache-Aside Rule: Write authoritative data to MySQL first,
+ * then invalidate affected Redis cache keys so stale entries are never served.
  */
 export async function createCustomer(input: CreateCustomerInput): Promise<Customer> {
   const id = crypto.randomUUID();
@@ -173,6 +234,7 @@ export async function createCustomer(input: CreateCustomerInput): Promise<Custom
   const industry = input.industry?.trim() || null;
   const status = input.status || "NEW";
 
+  // 1. Authoritative MySQL write
   await pool.query<ResultSetHeader>(
     `INSERT INTO customers 
       (id, user_id, company_name, domain, contact_name, contact_email, industry, status)
@@ -180,9 +242,14 @@ export async function createCustomer(input: CreateCustomerInput): Promise<Custom
     [id, userId, companyName, domain, contactName, contactEmail, industry, status]
   );
 
-  const created = await getCustomerByDomain(domain);
-  if (!created) {
+  // 2. Invalidate affected cache entries
+  await delCachePattern("customers:*");
+  console.log(`[Cache Invalidation] Cleared all customer cache entries after creating domain: ${domain}`);
+
+  // 3. Retrieve created record
+  const result = await getCustomerByDomain(domain);
+  if (!result.data) {
     throw new Error("Customer was created but could not be retrieved.");
   }
-  return created;
+  return result.data;
 }
