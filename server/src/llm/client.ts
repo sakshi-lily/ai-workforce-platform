@@ -91,17 +91,48 @@ export async function executeChatCompletion(
 
   let simulatedContent = "";
   if (options.responseFormat === "json_object") {
-    simulatedContent = JSON.stringify({
-      summary: "Redis acts as an ultra-fast temporary caching tier, while MySQL remains the durable source of truth with relational integrity and transactional consistency.",
-      topics: ["Redis Caching", "MySQL Durability", "System Architecture", "Reliability"],
-      sentiment: "POSITIVE",
-      confidence: 0.96,
-      keyInsights: [
-        "In-memory caches reduce database read queries and latency from milliseconds to microseconds.",
-        "Authoritative mutations must commit to MySQL first before cache invalidation.",
-        "System degradations must safely fall back to MySQL if Redis is unavailable."
-      ],
-    });
+    const isPlanningPrompt = promptText.toLowerCase().includes("plan") || promptText.toLowerCase().includes("goal") || promptText.toLowerCase().includes("steps");
+
+    if (isPlanningPrompt) {
+      simulatedContent = JSON.stringify({
+        goal: "Identify and qualify potential customers for the AI automation product.",
+        summary: "The task requires establishing an Ideal Customer Profile (ICP), identifying target vertical sectors, extracting candidate companies, and qualifying leads prior to outreach.",
+        steps: [
+          {
+            order: 1,
+            title: "Define Ideal Customer Profile (ICP)",
+            description: "Establish target company firmographics, headcount thresholds, and automation readiness."
+          },
+          {
+            order: 2,
+            title: "Identify Target Industries",
+            description: "Select high-probability sectors such as Enterprise Healthcare, Cloud Infrastructure, and Fintech."
+          },
+          {
+            order: 3,
+            title: "Discover Candidate Companies",
+            description: "Extract prospective company domains and verify technical footprint against target criteria."
+          },
+          {
+            order: 4,
+            title: "Verify and Qualify Prospects",
+            description: "Cross-reference prospective companies against internal CRM database records and assign qualification score."
+          }
+        ]
+      });
+    } else {
+      simulatedContent = JSON.stringify({
+        summary: "Redis acts as an ultra-fast temporary caching tier, while MySQL remains the durable source of truth with relational integrity and transactional consistency.",
+        topics: ["Redis Caching", "MySQL Durability", "System Architecture", "Reliability"],
+        sentiment: "POSITIVE",
+        confidence: 0.96,
+        keyInsights: [
+          "In-memory caches reduce database read queries and latency from milliseconds to microseconds.",
+          "Authoritative mutations must commit to MySQL first before cache invalidation.",
+          "System degradations must safely fall back to MySQL if Redis is unavailable."
+        ],
+      });
+    }
   } else {
     simulatedContent = `Redis should act strictly as a high-speed in-memory cache and temporary coordinator rather than replacing MySQL. MySQL provides durable storage, foreign key constraints, ACID transactions, and auditability for core business entities (users, tasks, customers), whereas Redis reduces read pressure and latency by serving cached representations.`;
   }

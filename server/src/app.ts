@@ -3,6 +3,7 @@ import cors from "cors";
 import { healthRouter } from "./routes/healthRoutes";
 import { customerRouter } from "./routes/customerRoutes";
 import { aiRouter } from "./routes/aiRoutes";
+import { agentRouter } from "./routes/agentRoutes";
 
 export const app = express();
 
@@ -21,6 +22,7 @@ app.use(express.json());
 app.use("/api/health", healthRouter);
 app.use("/api/customers", customerRouter);
 app.use("/api/ai", aiRouter);
+app.use("/api/agent", agentRouter);
 
 // Catch-all 404 handler
 app.use((_req: Request, res: Response) => {

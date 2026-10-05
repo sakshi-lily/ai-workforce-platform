@@ -35,3 +35,8 @@ lerna-debug.log*
 # OS metadata
 .DS_Store
 Thumbs.db
+
+# Database & Cache Snapshots
+*.rdb
+dump.rdb
+

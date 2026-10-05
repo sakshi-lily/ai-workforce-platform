@@ -1,0 +1,152 @@
+import { Router, Request, Response } from "express";
+import { executeAgentTask, getAgentTaskDetails } from "../agent/agentHost";
+import { listTasks } from "../services/taskService";
+import { AGENT_CONFIG } from "../agent/agentConfig";
+
+export const agentRouter = Router();
+
+/**
+ * POST /api/agent/tasks
+ * Submit and execute a bounded planning task with the Simple Agent.
+ */
+agentRouter.post("/tasks", async (req: Request, res: Response): Promise<void> => {
+  const { task, title, priority, userId } = req.body;
+
+  // 1. Strict Input Validation
+  if (!task || typeof task !== "string" || task.trim().length === 0) {
+    res.status(400).json({
+      status: "error",
+      error: {
+        code: "INVALID_TASK_INPUT",
+        message: "Field 'task' is required and must be a non-empty string.",
+      },
+    });
+    return;
+  }
+
+  const trimmed = task.trim();
+  if (trimmed.length < AGENT_CONFIG.MIN_PROMPT_LENGTH) {
+    res.status(400).json({
+      status: "error",
+      error: {
+        code: "TASK_TOO_SHORT",
+        message: `Task must be at least ${AGENT_CONFIG.MIN_PROMPT_LENGTH} characters.`,
+      },
+    });
+    return;
+  }
+
+  if (trimmed.length > AGENT_CONFIG.MAX_PROMPT_LENGTH) {
+    res.status(400).json({
+      status: "error",
+      error: {
+        code: "TASK_TOO_LONG",
+        message: `Task exceeds maximum length of ${AGENT_CONFIG.MAX_PROMPT_LENGTH} characters.`,
+      },
+    });
+    return;
+  }
+
+  try {
+    const result = await executeAgentTask({
+      task: trimmed,
+      title: typeof title === "string" ? title.trim() : undefined,
+      priority: priority && ["LOW", "NORMAL", "HIGH", "URGENT"].includes(priority) ? priority : "NORMAL",
+      userId: typeof userId === "string" ? userId : undefined,
+    });
+
+    if (result.status === "FAILED") {
+      res.status(422).json({
+        status: "failed",
+        error: {
+          code: "AGENT_EXECUTION_FAILED",
+          message: result.error || "Agent execution failed.",
+        },
+        data: result,
+      });
+      return;
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: result,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Internal agent execution error";
+    res.status(500).json({
+      status: "error",
+      error: {
+        code: "AGENT_HOST_ERROR",
+        message,
+      },
+    });
+  }
+});
+
+/**
+ * GET /api/agent/tasks
+ * Lists recent agent execution tasks.
+ */
+agentRouter.get("/tasks", async (req: Request, res: Response): Promise<void> => {
+  const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 50);
+
+  try {
+    const tasks = await listTasks(limit);
+    res.status(200).json({
+      status: "success",
+      count: tasks.length,
+      data: tasks,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to list tasks";
+    res.status(500).json({
+      status: "error",
+      error: {
+        code: "TASK_LIST_ERROR",
+        message,
+      },
+    });
+  }
+});
+
+/**
+ * GET /api/agent/tasks/:id
+ * Retrieves full details of a specific task, including generated plan steps and telemetry.
+ */
+agentRouter.get("/tasks/:id", async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  try {
+    const details = await getAgentTaskDetails(id);
+
+    if (!details.task) {
+      res.status(404).json({
+        status: "error",
+        error: {
+          code: "TASK_NOT_FOUND",
+          message: `No agent task found with ID: ${id}`,
+        },
+      });
+      return;
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        task: details.task,
+        steps: details.steps,
+        plan: details.parsedPlan,
+        telemetry: details.telemetry,
+      },
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to retrieve task details";
+    res.status(500).json({
+      status: "error",
+      error: {
+        code: "TASK_RETRIEVAL_ERROR",
+        message,
+      },
+    });
+  }
+});

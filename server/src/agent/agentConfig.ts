@@ -1,0 +1,24 @@
+/**
+ * Phase 7 - Simple Agent Configuration & Watchdogs
+ *
+ * Enforces host-controlled boundaries:
+ * - Cycle watchdog (max iterations before forced termination)
+ * - Time watchdog (max wall-clock execution time)
+ * - Plan bounds (max steps an agent can propose)
+ */
+
+export const AGENT_CONFIG = {
+  // Phase 1 / Phase 7 Watchdog Limits
+  MAX_CYCLES: 10,
+  MAX_EXECUTION_TIME_MS: 180000, // 180 seconds
+  MAX_PLAN_STEPS: 10,
+  MIN_PLAN_STEPS: 1,
+
+  // Prompt bounds
+  MAX_PROMPT_LENGTH: 5000,
+  MIN_PROMPT_LENGTH: 5,
+
+  // Context & Identity
+  DEFAULT_USER_ID: "usr_phase4_seed_001",
+  AGENT_ROLE: "planning_agent",
+} as const;
