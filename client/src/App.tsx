@@ -212,11 +212,11 @@ export default function App() {
   const [telemetryHistory, setTelemetryHistory] = useState<TelemetryRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState<boolean>(false);
 
-  // Phase 7 & 8: Simple Agent & Tool Calling state
+  // Phase 7, 8, 9: Simple Agent, Tool Calling & Web Search state
   const [agentMode, setAgentMode] = useState<'tools' | 'planning'>('tools');
   const [registeredTools, setRegisteredTools] = useState<RegisteredTool[]>([]);
-  const [selectedTools, setSelectedTools] = useState<string[]>(['get_current_time', 'calculate']);
-  const [agentTaskPrompt, setAgentTaskPrompt] = useState<string>('What time is it in India?');
+  const [selectedTools, setSelectedTools] = useState<string[]>(['get_current_time', 'calculate', 'web_search']);
+  const [agentTaskPrompt, setAgentTaskPrompt] = useState<string>('Find the current CEO of Microsoft and summarize the key facts.');
   const [agentLoading, setAgentLoading] = useState<boolean>(false);
   const [agentResult, setAgentResult] = useState<AgentExecutionResult | null>(null);
   const [agentError, setAgentError] = useState<string | null>(null);
@@ -797,11 +797,11 @@ export default function App() {
                   <h2 className="text-lg font-bold text-white flex items-center gap-2">
                     Agent Host & Tool Execution Studio
                     <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-700/50 text-cyan-300">
-                      Phase 8: Tool Calling
+                      Phase 9: Web Search
                     </span>
                   </h2>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Host boundary: <code className="text-cyan-300 font-mono">LLM Proposes → Host Validates & Authorizes → Safe Tool Execution → Observation → Final Answer</code>
+                    Host boundary: <code className="text-cyan-300 font-mono">LLM Proposes → Host Authorizes → Search Adapter / Tools → Untrusted Data Normalization → LLM Reasoning</code>
                   </p>
                 </div>
               </div>
@@ -809,7 +809,7 @@ export default function App() {
 
             <div className="flex flex-wrap items-center gap-2">
               <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-400">
-                Watchdogs: <strong className="text-cyan-300">10 Cycles</strong> &bull; <strong className="text-purple-300">10 Tools</strong> &bull; <strong className="text-slate-200">180s</strong>
+                Watchdogs: <strong className="text-cyan-300">10 Cycles</strong> &bull; <strong className="text-purple-300">10 Tools</strong> &bull; <strong className="text-emerald-300">5 Searches</strong> &bull; <strong className="text-slate-200">180s</strong>
               </span>
             </div>
           </div>
@@ -820,7 +820,7 @@ export default function App() {
               type="button"
               onClick={() => {
                 setAgentMode('tools');
-                setAgentTaskPrompt('What time is it in India?');
+                setAgentTaskPrompt('Find the current CEO of Microsoft and summarize the key facts.');
               }}
               className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
                 agentMode === 'tools'
@@ -828,7 +828,7 @@ export default function App() {
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <span>⚡ Tool Calling Mode (Phase 8)</span>
+              <span>⚡ Tool Calling & Search (Phase 9)</span>
             </button>
             <button
               type="button"
@@ -859,7 +859,7 @@ export default function App() {
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {registeredTools.map((tool) => {
                   const isChecked = selectedTools.includes(tool.name);
                   return (
@@ -908,38 +908,52 @@ export default function App() {
           {/* Quick Presets */}
           <div className="space-y-1.5">
             <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-              {agentMode === 'tools' ? 'Phase 8 Tool Verification Presets:' : 'Phase 7 Planning Presets:'}
+              {agentMode === 'tools' ? 'Phase 9 Tool & Search Verification Presets:' : 'Phase 7 Planning Presets:'}
             </span>
             <div className="flex flex-wrap gap-2">
               {agentMode === 'tools' ? (
                 <>
                   <button
                     type="button"
+                    onClick={() => setAgentTaskPrompt('Find the current CEO of Microsoft and summarize the key facts.')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-cyan-300 transition-colors cursor-pointer"
+                  >
+                    🔍 Search: CEO of Microsoft
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentTaskPrompt('Search the web for the state of autonomous AI agent frameworks in 2026.')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-cyan-300 transition-colors cursor-pointer"
+                  >
+                    🔍 Search: AI Agent Frameworks
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentTaskPrompt('Search for the latest OpenAI GPT-4o multimodal models and API documentation.')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-cyan-300 transition-colors cursor-pointer"
+                  >
+                    🔍 Search: OpenAI GPT-4o
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentTaskPrompt('Find security research on indirect prompt injection vectors in web search.')}
+                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-rose-500/50 text-rose-300 transition-colors cursor-pointer"
+                  >
+                    🛡️ Security: Prompt Injection Test
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setAgentTaskPrompt('What time is it in India?')}
                     className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
                   >
-                    Current Time (India)
+                    🕒 Time (India)
                   </button>
                   <button
                     type="button"
                     onClick={() => setAgentTaskPrompt('Calculate ((125 * 4) + 50) / 5')}
                     className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
                   >
-                    Calculate ((125 * 4) + 50) / 5
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAgentTaskPrompt('What time is it in Tokyo (Asia/Tokyo)?')}
-                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
-                  >
-                    Current Time (Tokyo)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAgentTaskPrompt('Calculate 45 * 12 + 10')}
-                    className="text-[11px] px-3 py-1 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-slate-300 transition-colors cursor-pointer"
-                  >
-                    Calculate 45 * 12 + 10
+                    🔢 Calculate
                   </button>
                 </>
               ) : (
@@ -1121,27 +1135,93 @@ export default function App() {
                           </span>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                          {/* Validated Input Arguments */}
-                          <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">
-                            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans font-medium">
-                              Validated Arguments (Zod Verified)
-                            </span>
-                            <pre className="text-[11px] text-cyan-300 overflow-x-auto whitespace-pre-wrap">
-                              {JSON.stringify(exec.arguments, null, 2)}
-                            </pre>
-                          </div>
+                        {exec.tool === 'web_search' && exec.result && typeof exec.result === 'object' && 'results' in (exec.result as any) ? (
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between text-xs px-1">
+                              <span className="text-slate-400">
+                                Search Query: <span className="font-semibold text-cyan-300 font-mono">"{((exec.result as any).query || (exec.arguments as any)?.query)}"</span>
+                              </span>
+                              <span className="text-[11px] text-purple-300 font-mono bg-purple-950/60 border border-purple-800/40 px-2 py-0.5 rounded">
+                                {((exec.result as any).results || []).length} Normalized Results Returned
+                              </span>
+                            </div>
 
-                          {/* Normalized Tool Observation */}
-                          <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">
-                            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans font-medium">
-                              Authoritative Observation (Fed to LLM)
-                            </span>
-                            <pre className="text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap">
-                              {JSON.stringify(exec.result, null, 2)}
-                            </pre>
+                            <div className="space-y-2">
+                              {((exec.result as any).results || []).map((item: any, idx: number) => (
+                                <div key={idx} className="p-3 rounded-lg bg-slate-900/90 border border-slate-800 hover:border-slate-700 transition-colors space-y-1.5">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <a
+                                      href={item.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-xs font-semibold text-cyan-300 hover:text-cyan-200 hover:underline flex items-center gap-1.5"
+                                    >
+                                      <span>{item.title}</span>
+                                      <span className="text-[10px] text-slate-500 font-mono">↗</span>
+                                    </a>
+                                    {item.domain && (
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-400 shrink-0">
+                                        {item.domain}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                                    {item.snippet}
+                                  </p>
+                                  <div className="text-[10px] font-mono text-slate-500 truncate">
+                                    {item.url}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            <details className="text-xs group">
+                              <summary className="cursor-pointer text-[11px] font-mono text-slate-500 hover:text-slate-300 select-none">
+                                ▸ Inspect Raw Observation Payload (LLM Observation Data)
+                              </summary>
+                              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">
+                                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans font-medium">
+                                    Validated Input (Zod)
+                                  </span>
+                                  <pre className="text-[11px] text-cyan-300 overflow-x-auto whitespace-pre-wrap">
+                                    {JSON.stringify(exec.arguments, null, 2)}
+                                  </pre>
+                                </div>
+                                <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">
+                                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans font-medium">
+                                    Authoritative Observation
+                                  </span>
+                                  <pre className="text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap">
+                                    {JSON.stringify(exec.result, null, 2)}
+                                  </pre>
+                                </div>
+                              </div>
+                            </details>
                           </div>
-                        </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                            {/* Validated Input Arguments */}
+                            <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">
+                              <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans font-medium">
+                                Validated Arguments (Zod Verified)
+                              </span>
+                              <pre className="text-[11px] text-cyan-300 overflow-x-auto whitespace-pre-wrap">
+                                {JSON.stringify(exec.arguments, null, 2)}
+                              </pre>
+                            </div>
+
+                            {/* Normalized Tool Observation */}
+                            <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">
+                              <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans font-medium">
+                                Authoritative Observation (Fed to LLM)
+                              </span>
+                              <pre className="text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap">
+                                {JSON.stringify(exec.result, null, 2)}
+                              </pre>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1158,7 +1238,7 @@ export default function App() {
                     </span>
                     <span className="text-[10px] font-mono text-slate-500">Task: {agentResult.taskId.substring(0, 8)}...</span>
                   </div>
-                  <div className="text-sm font-medium text-slate-100 leading-relaxed pt-1">
+                  <div className="text-sm font-medium text-slate-100 leading-relaxed pt-1 whitespace-pre-wrap">
                     {agentResult.finalAnswer}
                   </div>
                 </div>
@@ -1603,7 +1683,7 @@ export default function App() {
         {/* Section 5: Architecture Diagram */}
         <section className="bg-slate-900/40 rounded-2xl border border-slate-800/80 p-6 sm:p-8">
           <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-4">
-            Phase 8 Tool Calling & Agent Host Architecture Pipeline
+            Phase 9 Web Search & Agent Host Architecture Pipeline
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-center">
             <div className="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
@@ -1611,7 +1691,7 @@ export default function App() {
               <span className="font-semibold text-xs text-slate-200">React + Vite</span>
               <span className="text-[11px] text-slate-500 mt-1">Port 5173</span>
               <div className="mt-2 text-[10px] text-cyan-300 bg-cyan-950/50 border border-cyan-800/50 px-2 py-0.5 rounded">
-                Tool Calling Studio & Timeline
+                Tool Calling Studio & Search Timeline
               </div>
             </div>
 
@@ -1629,16 +1709,16 @@ export default function App() {
               <span className="font-semibold text-xs text-slate-200">State & Loop</span>
               <span className="text-[11px] text-slate-500 mt-1">Watchdogs & Allowlist</span>
               <div className="mt-2 text-[10px] text-purple-300 bg-purple-950/50 border border-purple-800/50 px-2 py-0.5 rounded font-mono">
-                Observation Loop
+                Observation Loop (Max 5 Searches)
               </div>
             </div>
 
             <div className="p-3.5 rounded-xl bg-slate-950/50 border border-slate-800 flex flex-col items-center">
-              <span className="text-[10px] font-mono text-rose-400 mb-1">TOOL REGISTRY</span>
-              <span className="font-semibold text-xs text-slate-200">Safe Local Tools</span>
-              <span className="text-[11px] text-slate-500 mt-1">10s Execution Race</span>
+              <span className="text-[10px] font-mono text-rose-400 mb-1">TOOL REGISTRY & SEARCH</span>
+              <span className="font-semibold text-xs text-slate-200">Safe Tools & Provider</span>
+              <span className="text-[11px] text-slate-500 mt-1">Provider Adapter & Normalizer</span>
               <div className="mt-2 text-[10px] text-rose-300 bg-rose-950/50 border border-rose-800/50 px-2 py-0.5 rounded font-mono">
-                Time & Calculate Tools
+                web_search, time, calc
               </div>
             </div>
 
@@ -1655,7 +1735,7 @@ export default function App() {
 
         {/* Footer */}
         <footer className="text-center text-xs text-slate-500 pt-4 border-t border-slate-800/80">
-          AI Workforce Platform &bull; Phase 8: Tool Calling Complete &bull; Ready for Phase 9: Web Search
+          AI Workforce Platform &bull; Phase 9: Web Search Complete &bull; Ready for Phase 10: MySQL Verification
         </footer>
       </div>
     </div>
