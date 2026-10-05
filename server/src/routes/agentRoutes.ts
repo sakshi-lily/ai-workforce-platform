@@ -2,15 +2,30 @@ import { Router, Request, Response } from "express";
 import { executeAgentTask, getAgentTaskDetails } from "../agent/agentHost";
 import { listTasks } from "../services/taskService";
 import { AGENT_CONFIG } from "../agent/agentConfig";
+import { toolRegistry } from "../tools/registry";
+import { getToolExecutionsForTask } from "../services/toolExecutionService";
 
 export const agentRouter = Router();
 
 /**
+ * GET /api/agent/tools
+ * Lists registered tools in the platform registry with risk levels.
+ */
+agentRouter.get("/tools", (_req: Request, res: Response): void => {
+  const tools = toolRegistry.listTools();
+  res.status(200).json({
+    status: "success",
+    count: tools.length,
+    data: tools,
+  });
+});
+
+/**
  * POST /api/agent/tasks
- * Submit and execute a bounded planning task with the Simple Agent.
+ * Submit and execute a bounded task with the Agent (supporting planning and tool calling).
  */
 agentRouter.post("/tasks", async (req: Request, res: Response): Promise<void> => {
-  const { task, title, priority, userId } = req.body;
+  const { task, title, priority, userId, mode, allowedTools } = req.body;
 
   // 1. Strict Input Validation
   if (!task || typeof task !== "string" || task.trim().length === 0) {
@@ -53,6 +68,8 @@ agentRouter.post("/tasks", async (req: Request, res: Response): Promise<void> =>
       title: typeof title === "string" ? title.trim() : undefined,
       priority: priority && ["LOW", "NORMAL", "HIGH", "URGENT"].includes(priority) ? priority : "NORMAL",
       userId: typeof userId === "string" ? userId : undefined,
+      mode: mode === "planning" ? "planning" : "tools",
+      allowedTools: Array.isArray(allowedTools) ? allowedTools : undefined,
     });
 
     if (result.status === "FAILED") {
@@ -111,7 +128,7 @@ agentRouter.get("/tasks", async (req: Request, res: Response): Promise<void> => 
 
 /**
  * GET /api/agent/tasks/:id
- * Retrieves full details of a specific task, including generated plan steps and telemetry.
+ * Retrieves full details of a specific task, including generated plan steps, tool executions, and telemetry.
  */
 agentRouter.get("/tasks/:id", async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
@@ -130,12 +147,15 @@ agentRouter.get("/tasks/:id", async (req: Request, res: Response): Promise<void>
       return;
     }
 
+    const toolExecutions = await getToolExecutionsForTask(id);
+
     res.status(200).json({
       status: "success",
       data: {
         task: details.task,
         steps: details.steps,
         plan: details.parsedPlan,
+        toolExecutions,
         telemetry: details.telemetry,
       },
     });

@@ -1,8 +1,17 @@
+import OpenAI from "openai";
 import { z } from "zod";
 
 export interface ChatMessage {
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
+  name?: string;
+  tool_call_id?: string;
+}
+
+export interface NormalizedToolCall {
+  tool: string;
+  arguments: Record<string, unknown>;
+  toolCallId?: string;
 }
 
 export interface GenerateOptions {
@@ -10,6 +19,14 @@ export interface GenerateOptions {
   temperature?: number;
   maxTokens?: number;
   responseFormat?: "text" | "json_object";
+  tools?: OpenAI.Chat.Completions.ChatCompletionTool[];
+  toolChoice?: "auto" | "none" | "required";
+}
+
+export interface LLMStepResponse {
+  content: string | null;
+  toolCall: NormalizedToolCall | null;
+  telemetry: LLMTelemetry;
 }
 
 export interface LLMTelemetry {

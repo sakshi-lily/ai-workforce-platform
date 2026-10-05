@@ -10,6 +10,7 @@
 export const AGENT_CONFIG = {
   // Phase 1 / Phase 7 Watchdog Limits
   MAX_CYCLES: 10,
+  MAX_TOOL_CALLS: 10,
   MAX_EXECUTION_TIME_MS: 180000, // 180 seconds
   MAX_PLAN_STEPS: 10,
   MIN_PLAN_STEPS: 1,

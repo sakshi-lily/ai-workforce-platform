@@ -13,6 +13,10 @@ export type AgentLifecycleState =
   | "RUNNING"
   | "LLM_CALL"
   | "VALIDATING"
+  | "TOOL_REQUESTED"
+  | "TOOL_AUTHORIZED"
+  | "TOOL_EXECUTING"
+  | "TOOL_COMPLETED"
   | "COMPLETED"
   | "FAILED"
   | "CANCELLED";
@@ -51,6 +55,8 @@ export interface CreateAgentTaskInput {
   title?: string;
   userId?: string;
   priority?: "LOW" | "NORMAL" | "HIGH" | "URGENT";
+  mode?: "planning" | "tools";
+  allowedTools?: string[];
 }
 
 /**
@@ -104,6 +110,15 @@ export interface AgentExecutionResponse {
   latencyMs: number;
   plan: AgentPlan | null;
   steps: AgentTaskStepEntity[];
+  finalAnswer?: string | null;
+  toolExecutions?: Array<{
+    id: string;
+    tool: string;
+    arguments: Record<string, unknown>;
+    result: unknown;
+    durationMs: number;
+    success: boolean;
+  }>;
   telemetry: {
     model: string;
     totalTokens: number;
