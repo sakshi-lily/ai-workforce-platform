@@ -10,22 +10,26 @@ CREATE DATABASE IF NOT EXISTS ai_workforce
 USE ai_workforce;
 
 
--- 1. Users Table
+-- 1. Users Table (Phase 13 Authenticated Identity & Tenancy)
 CREATE TABLE IF NOT EXISTS users (
-    id VARCHAR(36) PRIMARY KEY,
+    id VARCHAR(64) PRIMARY KEY,
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(100) NOT NULL,
     organization_name VARCHAR(150) NULL,
+    organization_id VARCHAR(64) NOT NULL DEFAULT 'org-demo-001',
+    role ENUM('USER', 'ADMIN') NOT NULL DEFAULT 'USER',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_users_email (email)
+    INDEX idx_users_email (email),
+    INDEX idx_users_org (organization_id)
 ) ENGINE=InnoDB;
 
 -- 2. Tasks Table
 CREATE TABLE IF NOT EXISTS tasks (
     id VARCHAR(36) PRIMARY KEY,
-    user_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(64) NOT NULL,
+    organization_id VARCHAR(64) NOT NULL DEFAULT 'org-demo-001',
     title VARCHAR(255) NOT NULL,
     prompt TEXT NOT NULL,
     status ENUM('PENDING', 'REQUESTED', 'IN_PROGRESS', 'RUNNING', 'AWAITING_APPROVAL', 'COMPLETED', 'FAILED', 'CANCELLED') NOT NULL DEFAULT 'REQUESTED',
@@ -41,6 +45,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_tasks_org_created (organization_id, created_at DESC),
     INDEX idx_tasks_user_status (user_id, status),
     INDEX idx_tasks_created (created_at DESC)
 ) ENGINE=InnoDB;
@@ -64,10 +69,11 @@ CREATE TABLE IF NOT EXISTS task_steps (
     INDEX idx_task_steps_order (task_id, step_order)
 ) ENGINE=InnoDB;
 
--- 4. Customers & Prospects Directory
+-- 4. Customers & Prospects Directory (Phase 13 Tenant Scoped)
 CREATE TABLE IF NOT EXISTS customers (
     id VARCHAR(36) PRIMARY KEY,
-    user_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(64) NOT NULL,
+    organization_id VARCHAR(64) NOT NULL DEFAULT 'org-demo-001',
     company_name VARCHAR(150) NOT NULL,
     domain VARCHAR(150) NOT NULL,
     contact_name VARCHAR(100) NULL,
@@ -80,6 +86,7 @@ CREATE TABLE IF NOT EXISTS customers (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE KEY uk_user_domain (user_id, domain),
+    INDEX idx_customers_org (organization_id),
     INDEX idx_customers_lookup (domain, company_name)
 ) ENGINE=InnoDB;
 
@@ -114,18 +121,21 @@ CREATE TABLE IF NOT EXISTS approvals (
     INDEX idx_approvals_status (task_id, status)
 ) ENGINE=InnoDB;
 
--- 7. Audit Logs
+-- 7. Audit Logs (Phase 13 Actor & Tenant Scoped)
 CREATE TABLE IF NOT EXISTS audit_logs (
     id VARCHAR(36) PRIMARY KEY,
-    user_id VARCHAR(36) NULL,
+    user_id VARCHAR(64) NULL,
+    organization_id VARCHAR(64) NULL,
     task_id VARCHAR(36) NULL,
     event_type VARCHAR(100) NOT NULL,
+    action VARCHAR(100) NULL,
     details_json JSON NOT NULL,
     ip_address VARCHAR(45) NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL,
-    INDEX idx_audit_event (event_type, created_at DESC)
+    INDEX idx_audit_event (event_type, created_at DESC),
+    INDEX idx_audit_org (organization_id)
 ) ENGINE=InnoDB;
 
 -- 8. AI Telemetry & Execution Metrics (Phase 6)

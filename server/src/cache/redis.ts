@@ -102,6 +102,9 @@ export async function checkRedisHealth(): Promise<{
  * Safe GET from cache. Returns null if missing or on Redis failure.
  */
 export async function getCache<T>(key: string): Promise<T | null> {
+  if (!client) {
+    await initRedis();
+  }
   if (!client || !isConnected) return null;
   try {
     const cached = await client.get(key);
@@ -121,6 +124,9 @@ export async function setCache(
   value: unknown,
   ttlSeconds: number = config.redis.ttlSeconds
 ): Promise<void> {
+  if (!client) {
+    await initRedis();
+  }
   if (!client || !isConnected) return;
   try {
     const serialized = JSON.stringify(value);
@@ -136,6 +142,9 @@ export async function setCache(
  * Invalidate a specific cache key.
  */
 export async function delCache(key: string): Promise<void> {
+  if (!client) {
+    await initRedis();
+  }
   if (!client || !isConnected) return;
   try {
     await client.del(key);
@@ -148,6 +157,9 @@ export async function delCache(key: string): Promise<void> {
  * Invalidate keys matching a pattern (e.g. "customers:*").
  */
 export async function delCachePattern(pattern: string): Promise<void> {
+  if (!client) {
+    await initRedis();
+  }
   if (!client || !isConnected) return;
   try {
     const keys = await client.keys(pattern);

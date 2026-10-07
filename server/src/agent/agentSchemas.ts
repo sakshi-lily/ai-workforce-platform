@@ -58,6 +58,7 @@ export interface CreateAgentTaskInput {
   priority?: "LOW" | "NORMAL" | "HIGH" | "URGENT";
   mode?: "planning" | "tools";
   allowedTools?: string[];
+  existingTaskId?: string;
 }
 
 /**

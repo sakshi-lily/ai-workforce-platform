@@ -6,6 +6,7 @@ import { getCache, setCache, delCachePattern } from "../cache/redis";
 export interface Customer {
   id: string;
   user_id: string;
+  organization_id: string;
   company_name: string;
   domain: string;
   contact_name: string | null;
@@ -20,6 +21,7 @@ export interface Customer {
 
 export interface CreateCustomerInput {
   userId?: string;
+  organizationId?: string;
   companyName: string;
   domain: string;
   contactName?: string;
@@ -135,9 +137,12 @@ export async function ensureSeedData(): Promise<void> {
  * 2. On Cache HIT -> return cached data immediately
  * 3. On Cache MISS -> query MySQL, store in Redis with TTL (60s), return data
  */
-export async function getAllCustomers(limit: number = 20): Promise<QueryResult<Customer[]>> {
+export async function getAllCustomers(
+  organizationId: string = "org-demo-001",
+  limit: number = 20
+): Promise<QueryResult<Customer[]>> {
   const safeLimit = Math.min(Math.max(1, limit), 100);
-  const cacheKey = `customers:list:limit:${safeLimit}`;
+  const cacheKey = `customers:${organizationId}:list:limit:${safeLimit}`;
   const start = performance.now();
 
   // 1. Try Cache Read
@@ -151,14 +156,15 @@ export async function getAllCustomers(limit: number = 20): Promise<QueryResult<C
     };
   }
 
-  // 2. Cache MISS: Query MySQL
+  // 2. Cache MISS: Query MySQL scoped strictly to tenant (organization_id)
   const [rows] = await pool.query<RowDataPacket[]>(
-    `SELECT id, user_id, company_name, domain, contact_name, contact_email, 
+    `SELECT id, user_id, organization_id, company_name, domain, contact_name, contact_email, 
             industry, qualification_score, qualification_rationale, status, created_at, updated_at
      FROM customers
+     WHERE organization_id = ?
      ORDER BY created_at DESC
      LIMIT ?;`,
-    [safeLimit]
+    [organizationId, safeLimit]
   );
 
   const customers = rows as Customer[];
@@ -175,12 +181,15 @@ export async function getAllCustomers(limit: number = 20): Promise<QueryResult<C
 }
 
 /**
- * Parameterized query demonstrating domain search with Cache-Aside pattern:
- * Key: `customers:domain:${normalizedDomain}`
+ * Parameterized query demonstrating domain search with tenant-isolated Cache-Aside pattern:
+ * Key: `customers:${organizationId}:domain:${normalizedDomain}`
  */
-export async function getCustomerByDomain(domain: string): Promise<QueryResult<Customer | null>> {
+export async function getCustomerByDomain(
+  domain: string,
+  organizationId: string = "org-demo-001"
+): Promise<QueryResult<Customer | null>> {
   const normalizedDomain = domain.trim().toLowerCase();
-  const cacheKey = `customers:domain:${normalizedDomain}`;
+  const cacheKey = `customers:${organizationId}:domain:${normalizedDomain}`;
   const start = performance.now();
 
   // 1. Try Cache Read
@@ -196,12 +205,12 @@ export async function getCustomerByDomain(domain: string): Promise<QueryResult<C
 
   // 2. Cache MISS: Query MySQL with parameterized binding
   const [rows] = await pool.query<RowDataPacket[]>(
-    `SELECT id, user_id, company_name, domain, contact_name, contact_email, 
+    `SELECT id, user_id, organization_id, company_name, domain, contact_name, contact_email, 
             industry, qualification_score, qualification_rationale, status, created_at, updated_at
      FROM customers
-     WHERE domain = ?
+     WHERE domain = ? AND organization_id = ?
      LIMIT 1;`,
-    [normalizedDomain]
+    [normalizedDomain, organizationId]
   );
 
   const customer = (rows.length > 0 ? rows[0] : null) as Customer | null;
@@ -222,11 +231,12 @@ export async function getCustomerByDomain(domain: string): Promise<QueryResult<C
 /**
  * Inserts a customer record with validated, parameterized inputs.
  * Crucial Cache-Aside Rule: Write authoritative data to MySQL first,
- * then invalidate affected Redis cache keys so stale entries are never served.
+ * then invalidate affected tenant-scoped Redis cache keys.
  */
 export async function createCustomer(input: CreateCustomerInput): Promise<Customer> {
   const id = crypto.randomUUID();
   const userId = input.userId || DEFAULT_DEMO_USER_ID;
+  const organizationId = input.organizationId || "org-demo-001";
   const companyName = input.companyName.trim();
   const domain = input.domain.trim().toLowerCase();
   const contactName = input.contactName?.trim() || null;
@@ -234,20 +244,20 @@ export async function createCustomer(input: CreateCustomerInput): Promise<Custom
   const industry = input.industry?.trim() || null;
   const status = input.status || "NEW";
 
-  // 1. Authoritative MySQL write
+  // 1. Authoritative MySQL write with tenant isolation
   await pool.query<ResultSetHeader>(
     `INSERT INTO customers 
-      (id, user_id, company_name, domain, contact_name, contact_email, industry, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-    [id, userId, companyName, domain, contactName, contactEmail, industry, status]
+      (id, user_id, organization_id, company_name, domain, contact_name, contact_email, industry, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    [id, userId, organizationId, companyName, domain, contactName, contactEmail, industry, status]
   );
 
-  // 2. Invalidate affected cache entries
-  await delCachePattern("customers:*");
-  console.log(`[Cache Invalidation] Cleared all customer cache entries after creating domain: ${domain}`);
+  // 2. Invalidate affected tenant-scoped cache entries
+  await delCachePattern(`customers:${organizationId}:*`);
+  console.log(`[Cache Invalidation] Cleared customer cache entries for org '${organizationId}' and domain: ${domain}`);
 
   // 3. Retrieve created record
-  const result = await getCustomerByDomain(domain);
+  const result = await getCustomerByDomain(domain, organizationId);
   if (!result.data) {
     throw new Error("Customer was created but could not be retrieved.");
   }
@@ -278,18 +288,18 @@ export interface CustomerVerificationResult {
  */
 export async function verifyCustomerByEmail(
   email: string,
-  userId: string = DEFAULT_DEMO_USER_ID
+  organizationId: string = "org-demo-001"
 ): Promise<CustomerVerificationResult> {
   const normalizedEmail = email.trim().toLowerCase();
 
-  // Parameterized query scoped to tenant (user_id)
+  // Parameterized query scoped to tenant (organization_id)
   const [rows] = await pool.query<RowDataPacket[]>(
     `SELECT id, company_name, domain, contact_name, contact_email, 
             industry, qualification_score, status, created_at
      FROM customers
-     WHERE LOWER(contact_email) = ? AND user_id = ?
+     WHERE LOWER(contact_email) = ? AND organization_id = ?
      LIMIT 1;`,
-    [normalizedEmail, userId]
+    [normalizedEmail, organizationId]
   );
 
   if (rows.length === 0) {

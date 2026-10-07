@@ -97,3 +97,111 @@ The agent runtime is constrained by deterministic host governors:
 | **Task Wall-Clock Timeout** | 180 seconds | Drops hung network connections. |
 | **Tool HTTP Timeout** | 15 seconds | Prevents slow external APIs from stalling execution. |
 | **Retry Backoff** | 2 retries (exponential) | Handles transient network hiccups. |
+
+---
+
+## 5. Phase 13 Authentication & Identity Propagation Architecture
+
+Phase 13 establishes real server-validated identity and replaces placeholder/assumed identity with cryptographic JWT verification.
+
+```text
+┌───────────────────┐
+│     Browser       │
+│  Login / Bearer   │
+└─────────┬─────────┘
+          │ Authorization: Bearer <jwt>
+          ▼
+┌───────────────────┐
+│ Express Middleware│
+│    requireAuth    │
+└─────────┬─────────┘
+          │ Decodes JWT, validates signature/expiration,
+          │ queries fresh user, attaches req.user
+          ▼
+┌───────────────────────────────────────────────┐
+│ Trusted Request Context                       │
+│  - req.userId (Internal stable identifier)   │
+│  - req.organizationId (Tenant boundary)       │
+│  - req.user.role (USER | ADMIN)               │
+└─────────┬─────────────────────────────────────┘
+          │ Host-controlled injection
+          ├────────────────────────┬────────────────────────┐
+          ▼                        ▼                        ▼
+┌───────────────────┐    ┌───────────────────┐    ┌───────────────────┐
+│    Agent Host     │    │   MySQL Queries   │    │  Qdrant / RAG     │
+│ Context injection │    │ org_id filter     │    │ org_id filter     │
+└─────────┬─────────┘    └───────────────────┘    └───────────────────┘
+          ▼
+┌───────────────────┐
+│  Tool Executions  │
+│  & Audit Logs     │
+└───────────────────┘
+```
+
+### Core Architectural Invariants
+1. **Server Controls Identity:** Client-supplied `userId` or `organizationId` in request bodies or query parameters are strictly ignored.
+2. **Anti-IDOR:** Possessing a task or customer ID does not grant access. All resource retrievals enforce `organization_id = req.user.organizationId`.
+3. **Cache Isolation:** Redis cache keys include the tenant namespace (`customers:<organizationId>:...`) to eliminate cross-tenant cache contamination.
+4. **Audit Trail:** All authentication events (`USER_REGISTERED`, `USER_LOGIN_SUCCESS`, `USER_LOGIN_FAILED`) are permanently recorded in `audit_logs` with actor `user_id` and `organization_id`.
+
+---
+
+## 6. Phase 14 Task Management Architecture
+
+Phase 14 establishes **work itself as a first-class citizen**, elevating execution from ad-hoc interactions into governed, durable business units.
+
+```text
+Authenticated User
+        ↓ (req.user & req.organizationId)
+Create Task (POST /api/tasks)
+        ↓
+Persist Task (MySQL: status = 'REQUESTED')
+        ↓
+Execute Task (POST /api/tasks/:id/run)
+        ↓
+State Transition: REQUESTED → RUNNING (409 Guard against duplicate runs)
+        ↓
+Agent Host Execution
+        ├── Sequential Steps (MySQL: task_steps with deterministic step_order)
+        ├── Governed Tools (MySQL: tool_executions linked via step_id)
+        └── Telemetry & Cost (MySQL: ai_telemetry)
+        ↓
+Task Result Synthesis & Multi-Source Attribution
+        ↓
+Final Transition: RUNNING → COMPLETED / FAILED
+        ↓
+Durable History & Audit Trail (MySQL: audit_logs)
+```
+
+### Deterministic State Machine
+
+```text
+                 ┌──────────────┐
+                 │  REQUESTED   │
+                 └──────┬───────┘
+                        │
+                        ▼
+                 ┌──────────────┐
+                 │   RUNNING    │
+                 └───┬──────┬───┘
+                     │      │
+              success│      │failure
+                     │      │
+                     ▼      ▼
+              ┌──────────┐ ┌────────┐
+              │COMPLETED │ │ FAILED │
+              └──────────┘ └────────┘
+                     ▲
+                     │
+                     │ cancellation
+                     │
+                 ┌───┴────────┐
+                 │ CANCELLED  │
+                 └────────────┘
+```
+
+- **LLM Boundary:** The LLM proposes tool invocations or answers; the application host strictly owns state transitions and lifecycle status.
+- **Anti-IDOR:** Attempting to retrieve or modify another tenant's task yields HTTP 404 (preventing resource existence disclosure).
+- **Concurrency Protection:** Starting an already running task or transitioning from terminal states (`COMPLETED`, `FAILED`, `CANCELLED`) yields HTTP 409 Conflict.
+- **Cancellation:** Permitted only from active states (`REQUESTED` or `RUNNING`). Terminal tasks cannot be cancelled.
+

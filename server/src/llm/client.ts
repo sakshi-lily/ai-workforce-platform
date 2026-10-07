@@ -172,6 +172,31 @@ export async function executeChatStep(
       userPrompt.includes("vector") ||
       userPrompt.includes("mars");
 
+    // Phase 12: Internal Grounded RAG Query
+    if (isVectorSearch && options.tools?.some((t) => (t as any).function?.name === "rag_query")) {
+      return {
+        content: null,
+        toolCall: {
+          tool: "rag_query",
+          arguments: {
+            question: userMessage?.content.trim() || "What is our customer support SLA?",
+            top_k: 5,
+          },
+          toolCallId: "sim_call_rag_1",
+        },
+        telemetry: {
+          provider: `${provider}-simulation`,
+          model,
+          inputTokens,
+          outputTokens: 25,
+          totalTokens: inputTokens + 25,
+          latencyMs: elapsed,
+          estimatedCostUsd: calculateCostUsd(inputTokens, 25),
+          status: "SUCCESS",
+        },
+      };
+    }
+
     // Phase 11: Internal Semantic Knowledge Retrieval
     if (isVectorSearch && options.tools?.some((t) => (t as any).function?.name === "vector_search")) {
       return {
@@ -363,6 +388,7 @@ export async function executeChatStep(
     const timeObs = toolObservations.find((o) => o.tool === "get_current_time");
     const calcObs = toolObservations.find((o) => o.tool === "calculate");
     const vectorObs = toolObservations.find((o) => o.tool === "vector_search");
+    const ragObs = toolObservations.find((o) => o.tool === "rag_query");
 
     if (webObs && mysqlObs) {
       // Multi-Tool Combined Synthesis (Web Search + MySQL Verification)
@@ -468,6 +494,18 @@ export async function executeChatStep(
         }
       } else {
         answer = `Internal knowledge vector search failed: ${vectorObs.error?.message || "Unknown retrieval error"}`;
+      }
+    } else if (ragObs) {
+      if (ragObs.success && ragObs.data) {
+        const citedSources = (ragObs.data.source_details || [])
+          .map((s: any) => `• [${s.sourceId}] ${s.title} (${s.source}, similarity: ${typeof s.score === 'number' ? s.score.toFixed(4) : s.score})`)
+          .join("\n");
+        answer =
+          `### Grounded Knowledge Synthesis (Phase 12 RAG)\n\n` +
+          `${ragObs.data.answer}\n\n` +
+          `**Attributed Sources:**\n${citedSources || "None"}`;
+      } else {
+        answer = `Internal knowledge RAG query failed: ${ragObs.error?.message || "Unknown error"}`;
       }
     }
 

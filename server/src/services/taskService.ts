@@ -15,12 +15,14 @@ import { AGENT_CONFIG } from "../agent/agentConfig";
  */
 export async function createTask(input: {
   userId?: string;
+  organizationId?: string;
   title?: string;
   prompt: string;
   priority?: "LOW" | "NORMAL" | "HIGH" | "URGENT";
 }): Promise<AgentTaskEntity> {
   const id = crypto.randomUUID();
   const userId = input.userId || AGENT_CONFIG.DEFAULT_USER_ID;
+  const organizationId = input.organizationId || "org-demo-001";
   const prompt = input.prompt.trim();
   const title = input.title?.trim() || prompt.substring(0, 60) + (prompt.length > 60 ? "..." : "");
   const priority = input.priority || "NORMAL";
@@ -28,13 +30,14 @@ export async function createTask(input: {
 
   const query = `
     INSERT INTO tasks (
-      id, user_id, title, prompt, status, priority, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW());
+      id, user_id, organization_id, title, prompt, status, priority, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW());
   `;
 
   await pool.query<ResultSetHeader>(query, [
     id,
     userId,
+    organizationId,
     title,
     prompt,
     initialStatus,
@@ -175,7 +178,7 @@ export async function persistTaskSteps(
 /**
  * Retrieves an individual task record without joined relations.
  */
-async function getTaskRecordOnly(taskId: string): Promise<AgentTaskEntity | null> {
+export async function getTaskRecordOnly(taskId: string): Promise<AgentTaskEntity | null> {
   const [rows] = await pool.query<RowDataPacket[]>(
     "SELECT * FROM tasks WHERE id = ? LIMIT 1;",
     [taskId]
@@ -188,7 +191,10 @@ async function getTaskRecordOnly(taskId: string): Promise<AgentTaskEntity | null
 /**
  * Retrieves a full task record with all associated steps and linked AI telemetry.
  */
-export async function getTaskById(taskId: string): Promise<{
+export async function getTaskById(
+  taskId: string,
+  organizationId?: string
+): Promise<{
   task: AgentTaskEntity | null;
   steps: AgentTaskStepEntity[];
   parsedPlan: AgentPlan | null;
@@ -201,6 +207,11 @@ export async function getTaskById(taskId: string): Promise<{
 }> {
   const task = await getTaskRecordOnly(taskId);
   if (!task) {
+    return { task: null, steps: [], parsedPlan: null, telemetry: null };
+  }
+
+  // IDOR Protection: Enforce tenant ownership boundary if organizationId provided
+  if (organizationId && (task as any).organization_id && (task as any).organization_id !== organizationId) {
     return { task: null, steps: [], parsedPlan: null, telemetry: null };
   }
 
@@ -246,9 +257,12 @@ export async function getTaskById(taskId: string): Promise<{
 }
 
 /**
- * Lists recent tasks for history display.
+ * Lists recent tasks for history display, scoped to tenant organization.
  */
-export async function listTasks(limit: number = 20): Promise<{
+export async function listTasks(
+  organizationId?: string,
+  limit: number = 20
+): Promise<{
   id: string;
   title: string;
   prompt: string;
@@ -259,17 +273,28 @@ export async function listTasks(limit: number = 20): Promise<{
   createdAt: string;
   completedAt: string | null;
 }[]> {
-  const [rows] = await pool.query<RowDataPacket[]>(
-    `SELECT 
+  let query = `
+    SELECT 
        t.id, t.title, t.prompt, t.status, t.priority, t.total_cost_usd, t.created_at, t.completed_at,
        COUNT(ts.id) AS stepCount
      FROM tasks t
      LEFT JOIN task_steps ts ON t.id = ts.task_id
+  `;
+  const params: any[] = [];
+
+  if (organizationId) {
+    query += ` WHERE t.organization_id = ? `;
+    params.push(organizationId);
+  }
+
+  query += `
      GROUP BY t.id
      ORDER BY t.created_at DESC
-     LIMIT ?;`,
-    [limit]
-  );
+     LIMIT ?;
+  `;
+  params.push(limit);
+
+  const [rows] = await pool.query<RowDataPacket[]>(query, params);
 
   return rows.map((r) => ({
     id: String(r.id),

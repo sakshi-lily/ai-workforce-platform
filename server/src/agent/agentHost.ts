@@ -1,12 +1,16 @@
+import crypto from "crypto";
+import { pool } from "../db/pool";
 import { AGENT_CONFIG } from "./agentConfig";
 import {
   AgentExecutionResponse,
   AgentLifecycleState,
   AgentPlan,
   AgentPlanSchema,
+  AgentTaskEntity,
+  AgentTaskStepEntity,
   CreateAgentTaskInput,
 } from "./agentSchemas";
-import { createTask, updateTaskState, persistTaskSteps, getTaskById } from "../services/taskService";
+import { createTask, updateTaskState, persistTaskSteps, getTaskById, getTaskRecordOnly } from "../services/taskService";
 import { generateStructured } from "../llm/service";
 import { executeChatStep } from "../llm/client";
 import { ChatMessage } from "../llm/types";
@@ -55,6 +59,73 @@ STRICT OPERATIONAL RULES:
 6. Once you receive the tool observations, synthesize a direct, helpful final answer that includes clear source attribution (distinguishing internal documents, database records, and external web results).
 7. Never pretend or hallucinate that you executed a tool without an authoritative observation.
 `;
+
+/**
+ * Persists an individual step into task_steps for tool execution or synthesis.
+ */
+async function recordStepForTask(
+  taskId: string,
+  stepOrder: number,
+  title: string,
+  description: string,
+  status: "PENDING" | "IN_PROGRESS" | "COMPLETED" | "FAILED" | "SKIPPED",
+  options?: {
+    toolName?: string | null;
+    inputData?: Record<string, unknown> | null;
+    outputData?: Record<string, unknown> | null;
+    errorMessage?: string | null;
+    startedAt?: string | null;
+    completedAt?: string | null;
+  }
+): Promise<AgentTaskStepEntity> {
+  const stepId = crypto.randomUUID();
+  const startedAt = options?.startedAt || new Date().toISOString().slice(0, 19).replace("T", " ");
+  const completedAt = options?.completedAt || new Date().toISOString().slice(0, 19).replace("T", " ");
+  const inputStr = options?.inputData ? JSON.stringify(options.inputData) : null;
+  const outputStr = options?.outputData ? JSON.stringify(options.outputData) : null;
+
+  try {
+    const query = `
+      INSERT INTO task_steps (
+        id, task_id, step_order, title, description, status,
+        tool_name, input_data, output_data, error_message,
+        started_at, completed_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW());
+    `;
+    await pool.query(query, [
+      stepId,
+      taskId,
+      stepOrder,
+      title,
+      description,
+      status,
+      options?.toolName || null,
+      inputStr,
+      outputStr,
+      options?.errorMessage || null,
+      startedAt,
+      completedAt,
+    ]);
+  } catch (err) {
+    console.warn("[MySQL Task Step Persistence Warning]", err);
+  }
+
+  return {
+    id: stepId,
+    task_id: taskId,
+    step_order: stepOrder,
+    title,
+    description,
+    status,
+    tool_name: options?.toolName || null,
+    input_data: options?.inputData || null,
+    output_data: options?.outputData || null,
+    error_message: options?.errorMessage || null,
+    started_at: startedAt,
+    completed_at: completedAt,
+    created_at: new Date().toISOString(),
+  };
+}
 
 /**
  * Validates whether a state transition is legal according to the application state machine.
@@ -112,12 +183,22 @@ export async function executeAgentPlanningTask(
   let currentState: AgentLifecycleState = "REQUESTED";
   logState("REQUESTED", "Task registered in database with initial status REQUESTED.");
 
-  const task = await createTask({
-    prompt,
-    title: input.title,
-    userId: input.userId || AGENT_CONFIG.DEFAULT_USER_ID,
-    priority: input.priority || "NORMAL",
-  });
+  let task: AgentTaskEntity;
+  if (input.existingTaskId) {
+    const existing = await getTaskRecordOnly(input.existingTaskId);
+    if (!existing) {
+      throw new Error(`Task not found for ID: ${input.existingTaskId}`);
+    }
+    task = existing;
+  } else {
+    task = await createTask({
+      prompt,
+      title: input.title,
+      userId: input.userId || AGENT_CONFIG.DEFAULT_USER_ID,
+      organizationId: input.organizationId || AGENT_CONFIG.DEFAULT_ORGANIZATION_ID,
+      priority: input.priority || "NORMAL",
+    });
+  }
 
   const cycle = 1;
 
@@ -258,13 +339,24 @@ export async function executeAgentWithTools(
   let currentState: AgentLifecycleState = "REQUESTED";
   logState("REQUESTED", "Task registered in database with initial status REQUESTED.");
 
-  const task = await createTask({
-    prompt,
-    title: input.title,
-    userId: input.userId || AGENT_CONFIG.DEFAULT_USER_ID,
-    priority: input.priority || "NORMAL",
-  });
+  let task: AgentTaskEntity;
+  if (input.existingTaskId) {
+    const existing = await getTaskRecordOnly(input.existingTaskId);
+    if (!existing) {
+      throw new Error(`Task not found for ID: ${input.existingTaskId}`);
+    }
+    task = existing;
+  } else {
+    task = await createTask({
+      prompt,
+      title: input.title,
+      userId: input.userId || AGENT_CONFIG.DEFAULT_USER_ID,
+      organizationId: input.organizationId || AGENT_CONFIG.DEFAULT_ORGANIZATION_ID,
+      priority: input.priority || "NORMAL",
+    });
+  }
 
+  const executedSteps: AgentTaskStepEntity[] = [];
   const toolExecutions: Array<{
     id: string;
     tool: string;
@@ -381,6 +473,7 @@ export async function executeAgentWithTools(
         logState("TOOL_EXECUTING", `Executing tool '${requestedTool}' with trusted context.`);
         currentState = "TOOL_EXECUTING";
 
+        const stepStartIso = new Date().toISOString().slice(0, 19).replace("T", " ");
         const toolStart = performance.now();
         const toolResult = await toolRegistry.executeTool(
           requestedTool,
@@ -393,17 +486,37 @@ export async function executeAgentWithTools(
           { allowedTools }
         );
         const durationMs = Math.round(performance.now() - toolStart);
+        const stepEndIso = new Date().toISOString().slice(0, 19).replace("T", " ");
 
         logState("TOOL_COMPLETED", `Tool '${requestedTool}' completed in ${durationMs}ms with success=${toolResult.success}.`);
         currentState = "TOOL_COMPLETED";
 
-        // Persist tool execution record in MySQL tool_executions
+        // Persist step entry for this tool call
+        const stepRecord = await recordStepForTask(
+          task.id,
+          toolCallsCount,
+          `Execute ${requestedTool}`,
+          `Invoked ${requestedTool} with provided parameters.`,
+          toolResult.success ? "COMPLETED" : "FAILED",
+          {
+            toolName: requestedTool,
+            inputData: requestedArgs,
+            outputData: toolResult.success ? (toolResult.data as Record<string, unknown>) : null,
+            errorMessage: toolResult.error ? `${toolResult.error.code}: ${toolResult.error.message}` : null,
+            startedAt: stepStartIso,
+            completedAt: stepEndIso,
+          }
+        );
+        executedSteps.push(stepRecord);
+
+        // Persist tool execution record in MySQL tool_executions linked to stepRecord.id
         const execId = await recordToolExecution(
           task.id,
           requestedTool,
           requestedArgs,
           toolResult,
-          durationMs
+          durationMs,
+          stepRecord.id
         );
 
         toolExecutions.push({
@@ -439,6 +552,21 @@ export async function executeAgentWithTools(
         logState("COMPLETED", "Agent execution successfully concluded.");
         currentState = "COMPLETED";
 
+        const finalStep = await recordStepForTask(
+          task.id,
+          toolCallsCount + 1,
+          "Synthesize Final Answer",
+          "Synthesizes tool observations and verified context into final response.",
+          "COMPLETED",
+          {
+            toolName: null,
+            inputData: null,
+            outputData: { answer: stepResponse.content },
+            errorMessage: null,
+          }
+        );
+        executedSteps.push(finalStep);
+
         await updateTaskState(task.id, "COMPLETED", {
           completedAt: true,
           finalReport: stepResponse.content,
@@ -455,7 +583,7 @@ export async function executeAgentWithTools(
           cycles: cycle,
           latencyMs: totalLatency,
           plan: null,
-          steps: [],
+          steps: executedSteps,
           finalAnswer: stepResponse.content,
           toolExecutions,
           telemetry: {
@@ -489,7 +617,7 @@ export async function executeAgentWithTools(
       cycles: cycle,
       latencyMs: totalLatency,
       plan: null,
-      steps: [],
+      steps: executedSteps,
       finalAnswer: null,
       toolExecutions,
       telemetry: null,
@@ -514,6 +642,6 @@ export async function executeAgentTask(
 /**
  * Retrieves an agent task by ID with its execution plan and persisted steps.
  */
-export async function getAgentTaskDetails(taskId: string) {
-  return getTaskById(taskId);
+export async function getAgentTaskDetails(taskId: string, organizationId?: string) {
+  return getTaskById(taskId, organizationId);
 }

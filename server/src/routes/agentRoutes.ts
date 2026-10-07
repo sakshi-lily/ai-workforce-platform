@@ -4,6 +4,7 @@ import { listTasks } from "../services/taskService";
 import { AGENT_CONFIG } from "../agent/agentConfig";
 import { toolRegistry } from "../tools/registry";
 import { getToolExecutionsForTask } from "../services/toolExecutionService";
+import { requireAuth } from "../auth/middleware";
 
 export const agentRouter = Router();
 
@@ -23,9 +24,10 @@ agentRouter.get("/tools", (_req: Request, res: Response): void => {
 /**
  * POST /api/agent/tasks
  * Submit and execute a bounded task with the Agent (supporting planning and tool calling).
+ * Protected: identity and organization context are strictly derived from req.user.
  */
-agentRouter.post("/tasks", async (req: Request, res: Response): Promise<void> => {
-  const { task, title, priority, userId, mode, allowedTools } = req.body;
+agentRouter.post("/tasks", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const { task, title, priority, mode, allowedTools } = req.body;
 
   // 1. Strict Input Validation
   if (!task || typeof task !== "string" || task.trim().length === 0) {
@@ -67,7 +69,9 @@ agentRouter.post("/tasks", async (req: Request, res: Response): Promise<void> =>
       task: trimmed,
       title: typeof title === "string" ? title.trim() : undefined,
       priority: priority && ["LOW", "NORMAL", "HIGH", "URGENT"].includes(priority) ? priority : "NORMAL",
-      userId: typeof userId === "string" ? userId : undefined,
+      // Host-controlled identity: derived strictly from authenticated user context
+      userId: req.user!.id,
+      organizationId: req.user!.organizationId,
       mode: mode === "planning" ? "planning" : "tools",
       allowedTools: Array.isArray(allowedTools) ? allowedTools : undefined,
     });
@@ -102,13 +106,13 @@ agentRouter.post("/tasks", async (req: Request, res: Response): Promise<void> =>
 
 /**
  * GET /api/agent/tasks
- * Lists recent agent execution tasks.
+ * Lists recent agent execution tasks for the authenticated organization.
  */
-agentRouter.get("/tasks", async (req: Request, res: Response): Promise<void> => {
+agentRouter.get("/tasks", requireAuth, async (req: Request, res: Response): Promise<void> => {
   const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 50);
 
   try {
-    const tasks = await listTasks(limit);
+    const tasks = await listTasks(req.user!.organizationId, limit);
     res.status(200).json({
       status: "success",
       count: tasks.length,
@@ -128,13 +132,13 @@ agentRouter.get("/tasks", async (req: Request, res: Response): Promise<void> => 
 
 /**
  * GET /api/agent/tasks/:id
- * Retrieves full details of a specific task, including generated plan steps, tool executions, and telemetry.
+ * Retrieves full details of a specific task, enforcing tenant isolation.
  */
-agentRouter.get("/tasks/:id", async (req: Request, res: Response): Promise<void> => {
+agentRouter.get("/tasks/:id", requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
 
   try {
-    const details = await getAgentTaskDetails(id);
+    const details = await getAgentTaskDetails(id, req.user!.organizationId);
 
     if (!details.task) {
       res.status(404).json({

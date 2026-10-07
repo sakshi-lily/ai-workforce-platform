@@ -64,8 +64,9 @@ export const mysqlVerifyCustomerTool: Tool<MySQLVerifyCustomerInput, MySQLVerify
     }
 
     // Host-controlled context determines the tenant / user identity.
-    // The LLM cannot specify or override context.userId.
-    const result = await verifyCustomerByEmail(input.email, context.userId);
+    // The LLM cannot specify or override context.organizationId.
+    const organizationId = context.organizationId || "org-demo-001";
+    const result = await verifyCustomerByEmail(input.email, organizationId);
     return result;
   },
 };

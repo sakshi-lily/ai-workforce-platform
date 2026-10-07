@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from './auth/AuthContext';
+import { TaskManagementStudio } from './tasks/TaskManagementStudio';
 
 type HealthStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -92,6 +94,50 @@ interface TelemetryRecord {
   created_at: string;
 }
 
+// Phase 12 - Retrieval-Augmented Generation (RAG) Types
+export interface RagSource {
+  sourceId: string;
+  documentId: string;
+  chunkId: string;
+  title: string;
+  source: string;
+  score: number;
+  text: string;
+  version?: number;
+  chunkIndex?: number;
+}
+
+export interface RagPipelineStep {
+  name: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'SKIPPED' | 'FAILED';
+  durationMs: number;
+  details?: string;
+}
+
+export interface RagTelemetry {
+  retrievalLatencyMs: number;
+  contextBuildingLatencyMs: number;
+  generationLatencyMs: number;
+  totalLatencyMs: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+  model: string;
+  provider: string;
+}
+
+export interface RagResponseData {
+  question: string;
+  answer: string;
+  grounded: boolean;
+  sources: RagSource[];
+  sourceIds: string[];
+  insufficientContext: boolean;
+  telemetry: RagTelemetry;
+  pipeline: RagPipelineStep[];
+}
+
 // Phase 7 & 8 - Agent & Tool Calling Types
 export type ToolRiskLevel = 'READ_ONLY' | 'LOW_RISK' | 'MUTATING' | 'EXTERNAL_SIDE_EFFECT';
 
@@ -165,6 +211,46 @@ interface AgentTaskSummary {
 }
 
 export default function App() {
+  // Phase 13: Centralized Authentication & Identity
+  const { user, authState, error: authContextError, login, register, logout, authFetch } = useAuth();
+  const [authTab, setAuthTab] = useState<'login' | 'register'>('login');
+  const [authEmail, setAuthEmail] = useState<string>('dev@ai-workforce.local');
+  const [authPassword, setAuthPassword] = useState<string>('password123');
+  const [authOrg, setAuthOrg] = useState<string>('org-demo-001');
+  const [authLoading, setAuthLoading] = useState<boolean>(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthError(null);
+    const ok = await login(authEmail.trim(), authPassword);
+    if (!ok) {
+      setAuthError(authContextError || 'Invalid email or password.');
+    }
+    setAuthLoading(false);
+  };
+
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthLoading(true);
+    setAuthError(null);
+    const ok = await register(authEmail.trim(), authPassword, authOrg.trim());
+    if (!ok) {
+      setAuthError(authContextError || 'Registration failed. Password must be >=8 chars with letter and number.');
+    }
+    setAuthLoading(false);
+  };
+
+  const handleQuickLogin = async (email: string, pass: string) => {
+    setAuthEmail(email);
+    setAuthPassword(pass);
+    setAuthLoading(true);
+    setAuthError(null);
+    await login(email, pass);
+    setAuthLoading(false);
+  };
+
   // Layer 1: Express Health
   const [backendStatus, setBackendStatus] = useState<HealthStatus>('idle');
   const [backendData, setBackendData] = useState<ProcessHealth | null>(null);
@@ -227,11 +313,26 @@ export default function App() {
   const [telemetryHistory, setTelemetryHistory] = useState<TelemetryRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState<boolean>(false);
 
-  // Phase 7, 8, 9: Simple Agent, Tool Calling & Web Search state
-  const [agentMode, setAgentMode] = useState<'tools' | 'planning'>('tools');
+  // Phase 12: Grounded RAG Studio state
+  const [ragQuestion, setRagQuestion] = useState<string>('What is our remote work policy?');
+  const [ragTopK, setRagTopK] = useState<number>(5);
+  const [ragScoreThreshold, setRagScoreThreshold] = useState<number>(0.0);
+  const [ragLoading, setRagLoading] = useState<boolean>(false);
+  const [ragResult, setRagResult] = useState<RagResponseData | null>(null);
+  const [ragError, setRagError] = useState<string | null>(null);
+
+  // Phase 7, 8, 9, 11, 12: Simple Agent, Tool Calling & RAG state
+  const [agentMode, setAgentMode] = useState<'rag' | 'tools' | 'planning'>('rag');
   const [registeredTools, setRegisteredTools] = useState<RegisteredTool[]>([]);
-  const [selectedTools, setSelectedTools] = useState<string[]>(['get_current_time', 'calculate', 'web_search', 'mysql_verify_customer']);
-  const [agentTaskPrompt, setAgentTaskPrompt] = useState<string>('Find the current CEO of Microsoft and summarize the key facts.');
+  const [selectedTools, setSelectedTools] = useState<string[]>([
+    'get_current_time',
+    'calculate',
+    'web_search',
+    'mysql_verify_customer',
+    'vector_search',
+    'rag_query',
+  ]);
+  const [agentTaskPrompt, setAgentTaskPrompt] = useState<string>('What is our company remote work policy and how many days can employees work from home?');
   const [agentLoading, setAgentLoading] = useState<boolean>(false);
   const [agentResult, setAgentResult] = useState<AgentExecutionResult | null>(null);
   const [agentError, setAgentError] = useState<string | null>(null);
@@ -340,12 +441,12 @@ export default function App() {
     }
   };
 
-  // 6. Fetch Customers with Cache-Aside Telemetry
+  // 6. Fetch Customers with Cache-Aside Telemetry (Tenant-Isolated)
   const fetchCustomers = async () => {
     setCustomersLoading(true);
     setCustomersError(null);
     try {
-      const res = await fetch('http://localhost:3000/api/customers');
+      const res = await authFetch('http://localhost:3000/api/customers');
       if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       const result = await res.json();
       setCustomers(result.data || []);
@@ -358,7 +459,7 @@ export default function App() {
     }
   };
 
-  // 6. Parameterized Domain Lookup
+  // 6. Parameterized Domain Lookup (Tenant-Isolated)
   const handleDomainSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchDomain.trim()) return;
@@ -368,7 +469,7 @@ export default function App() {
     setSearchResult(null);
 
     try {
-      const res = await fetch(`http://localhost:3000/api/customers/lookup?domain=${encodeURIComponent(searchDomain.trim())}`);
+      const res = await authFetch(`http://localhost:3000/api/customers/lookup?domain=${encodeURIComponent(searchDomain.trim())}`);
       const json = await res.json();
       if (res.status === 404) {
         setSearchError(`No customer found with domain '${searchDomain}'`);
@@ -387,7 +488,7 @@ export default function App() {
     }
   };
 
-  // 7. Create Customer in MySQL & Invalidate Cache
+  // 7. Create Customer in MySQL & Invalidate Cache (Tenant-Isolated)
   const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCompany.trim() || !newDomain.trim()) return;
@@ -396,7 +497,7 @@ export default function App() {
     setCreateMessage(null);
 
     try {
-      const res = await fetch('http://localhost:3000/api/customers', {
+      const res = await authFetch('http://localhost:3000/api/customers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -486,11 +587,11 @@ export default function App() {
     }
   };
 
-  // 10. Phase 7 & 8: Fetch Agent Tasks from MySQL
+  // 10. Phase 7 & 8: Fetch Agent Tasks from MySQL (Tenant-Isolated)
   const fetchAgentTasks = async () => {
     setAgentTasksLoading(true);
     try {
-      const res = await fetch('http://localhost:3000/api/agent/tasks?limit=10');
+      const res = await authFetch('http://localhost:3000/api/agent/tasks?limit=10');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setAgentTasks(json.data || []);
@@ -515,7 +616,41 @@ export default function App() {
     }
   };
 
-  // 11. Phase 7 & 8: Execute Agent Task (Tool Calling or Autonomous Planning)
+  // 10c. Phase 12 & 13: Execute Grounded RAG Query (Tenant-Isolated)
+  const handleRunRag = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!ragQuestion.trim()) return;
+
+    setRagLoading(true);
+    setRagError(null);
+    setRagResult(null);
+
+    try {
+      const res = await authFetch('http://localhost:3000/api/rag/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: ragQuestion.trim(),
+          topK: ragTopK,
+          scoreThreshold: ragScoreThreshold > 0 ? ragScoreThreshold : undefined,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.message || `RAG execution failed (HTTP ${res.status})`);
+      }
+
+      setRagResult(json.data);
+      fetchTelemetryHistory();
+    } catch (err: unknown) {
+      setRagError(err instanceof Error ? err.message : 'RAG query failed');
+    } finally {
+      setRagLoading(false);
+    }
+  };
+
+  // 11. Phase 7, 8 & 13: Execute Agent Task (Tenant-Isolated & Authenticated Context)
   const handleRunAgent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!agentTaskPrompt.trim()) return;
@@ -525,7 +660,7 @@ export default function App() {
     setAgentResult(null);
 
     try {
-      const res = await fetch('http://localhost:3000/api/agent/tasks', {
+      const res = await authFetch('http://localhost:3000/api/agent/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -555,10 +690,10 @@ export default function App() {
     }
   };
 
-  // 12. Phase 7 & 8: Load Agent Task from History
+  // 12. Phase 7, 8 & 13: Load Agent Task from History (Tenant-Isolated)
   const loadTaskDetails = async (taskId: string) => {
     try {
-      const res = await fetch(`http://localhost:3000/api/agent/tasks/${taskId}`);
+      const res = await authFetch(`http://localhost:3000/api/agent/tasks/${taskId}`);
       if (!res.ok) return;
       const json = await res.json();
       if (json.data) {
@@ -605,18 +740,27 @@ export default function App() {
     }
   };
 
-  // Mount effects
+  // Base platform health checks on mount
   useEffect(() => {
     checkBackend();
     checkDb();
     checkRedis();
     checkAiHealth();
     checkQdrantHealth();
-    fetchCustomers();
-    fetchTelemetryHistory();
-    fetchAgentTasks();
     fetchRegisteredTools();
   }, []);
+
+  // Reactively synchronize tenant-scoped resources when authenticated identity changes
+  useEffect(() => {
+    if (authState === 'AUTHENTICATED') {
+      fetchCustomers();
+      fetchTelemetryHistory();
+      fetchAgentTasks();
+    } else {
+      setCustomers([]);
+      setAgentTasks([]);
+    }
+  }, [authState, user?.id]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 sm:p-8 font-sans selection:bg-rose-500 selection:text-white">
@@ -639,10 +783,16 @@ export default function App() {
                 </h1>
               </div>
               <p className="mt-1 text-sm text-slate-400">
-                Phase 11 — Vector Database / Qdrant (Semantic Search over Internal Unstructured Knowledge)
+                Phase 13 — Authentication & Identity Boundary (Server-Validated JWT & Tenant-Isolated Data)
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <span className="px-3 py-1 text-xs font-medium rounded-full bg-indigo-950/80 border border-indigo-400/50 text-indigo-200 shadow-sm shadow-indigo-950">
+                🔐 Phase 13: Authentication
+              </span>
+              <span className="px-3 py-1 text-xs font-medium rounded-full bg-cyan-950/80 border border-cyan-400/50 text-cyan-200 shadow-sm shadow-cyan-950">
+                🧠 Grounded RAG
+              </span>
               <span className="px-3 py-1 text-xs font-medium rounded-full bg-cyan-950/80 border border-cyan-500/30 text-cyan-300">
                 Qdrant 1.13 Vector
               </span>
@@ -652,12 +802,208 @@ export default function App() {
               <span className="px-3 py-1 text-xs font-medium rounded-full bg-rose-950/80 border border-rose-500/30 text-rose-300">
                 Redis 8.10 Cache
               </span>
-              <span className="px-3 py-1 text-xs font-medium rounded-full bg-purple-950/80 border border-purple-500/30 text-purple-300">
-                OpenAI / Mock LLM
-              </span>
             </div>
           </div>
         </header>
+
+        {/* Phase 13: Centralized Authentication & Tenant Context Bar */}
+        <section className="bg-slate-900/80 backdrop-blur-md rounded-2xl border border-slate-800 p-5 shadow-xl space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🛡️</span>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-200">
+                Identity & Access Boundary
+              </h2>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-indigo-950 border border-indigo-800 text-indigo-300">
+                Server-Controlled JWT
+              </span>
+            </div>
+
+            {authState === 'AUTHENTICATED' && user && (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-mono">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  {user.email}
+                </span>
+                <span className="px-2.5 py-0.5 rounded-md font-bold text-[10px] bg-slate-800 border border-slate-700 text-slate-300">
+                  {user.role}
+                </span>
+                <span className="px-2.5 py-0.5 rounded-md font-mono text-[10px] bg-cyan-950 border border-cyan-700/60 text-cyan-300">
+                  Org: {user.organizationId}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => logout()}
+                  className="px-3 py-1 rounded-lg text-xs font-medium bg-rose-950/60 hover:bg-rose-900/80 border border-rose-800/80 text-rose-300 transition-colors"
+                >
+                  Sign Out
+                </button>
+              </div>
+            )}
+          </div>
+
+          {authState === 'CHECKING' && (
+            <div className="py-4 text-center text-sm text-indigo-300 animate-pulse">
+              Verifying authenticated session credentials with server /api/auth/me...
+            </div>
+          )}
+
+          {authState === 'AUTHENTICATED' && user && (
+            <div className="space-y-3">
+              <div className="text-xs text-slate-400 flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  All requests automatically propagate verified <code className="text-indigo-300">userId</code> and <code className="text-cyan-300">organizationId</code> to agent hosts, MySQL queries, and Qdrant retrieval.
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-slate-500">Quick Switch:</span>
+                  {user.organizationId !== 'org-demo-001' ? (
+                    <button
+                      type="button"
+                      disabled={authLoading}
+                      onClick={() => handleQuickLogin('dev@ai-workforce.local', 'password123')}
+                      className="px-2.5 py-1 rounded text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
+                    >
+                      Tenant A Admin (dev@ai-workforce.local)
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={authLoading}
+                      onClick={() => handleQuickLogin('tenant-b@example.com', 'password123')}
+                      className="px-2.5 py-1 rounded text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition"
+                    >
+                      Tenant B User (tenant-b@example.com)
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {authState === 'UNAUTHENTICATED' && (
+            <div className="space-y-4">
+              <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-800/50 text-amber-200 text-xs flex items-start gap-2.5">
+                <span className="text-base">⚠️</span>
+                <div>
+                  <p className="font-semibold text-amber-100">Guest Access (Unauthenticated)</p>
+                  <p className="text-amber-300/80 mt-0.5">
+                    Phase 13 establishes server-validated identity. Please sign in or register to execute Agent workflows, query Grounded RAG, and access tenant data.
+                  </p>
+                </div>
+              </div>
+
+              {authError && (
+                <div className="p-2.5 rounded-lg bg-rose-950/60 border border-rose-800/60 text-rose-300 text-xs">
+                  {authError}
+                </div>
+              )}
+
+              <div className="flex border-b border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setAuthTab('login'); setAuthError(null); }}
+                  className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors ${
+                    authTab === 'login'
+                      ? 'border-indigo-500 text-indigo-300'
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAuthTab('register'); setAuthError(null); }}
+                  className={`px-4 py-2 text-xs font-semibold border-b-2 transition-colors ${
+                    authTab === 'register'
+                      ? 'border-indigo-500 text-indigo-300'
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Register New Tenant
+                </button>
+              </div>
+
+              <form onSubmit={authTab === 'login' ? handleLoginSubmit : handleRegisterSubmit} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-mono text-slate-400 mb-1">Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="user@example.com"
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-mono text-slate-400 mb-1">Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder="Min 8 chars (letter + number)"
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                {authTab === 'register' ? (
+                  <div>
+                    <label className="block text-[11px] font-mono text-slate-400 mb-1">Organization ID</label>
+                    <input
+                      type="text"
+                      value={authOrg}
+                      onChange={(e) => setAuthOrg(e.target.value)}
+                      placeholder="e.g. org-tenant-c"
+                      className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-end">
+                    <button
+                      type="submit"
+                      disabled={authLoading}
+                      className="w-full px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition disabled:opacity-50"
+                    >
+                      {authLoading ? 'Authenticating...' : 'Sign In'}
+                    </button>
+                  </div>
+                )}
+
+                {authTab === 'register' && (
+                  <div className="sm:col-span-3">
+                    <button
+                      type="submit"
+                      disabled={authLoading}
+                      className="w-full px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition disabled:opacity-50"
+                    >
+                      {authLoading ? 'Registering...' : 'Register Account & Tenant'}
+                    </button>
+                  </div>
+                )}
+              </form>
+
+              <div className="pt-2 border-t border-slate-800/60 flex flex-wrap items-center gap-2">
+                <span className="text-[11px] text-slate-400">1-Click Test Logins:</span>
+                <button
+                  type="button"
+                  disabled={authLoading}
+                  onClick={() => handleQuickLogin('dev@ai-workforce.local', 'password123')}
+                  className="px-2.5 py-1 rounded text-xs bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 transition"
+                >
+                  🚀 Tenant A Admin (dev@ai-workforce.local)
+                </button>
+                <button
+                  type="button"
+                  disabled={authLoading}
+                  onClick={() => handleQuickLogin('tenant-b@example.com', 'password123')}
+                  className="px-2.5 py-1 rounded text-xs bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 transition"
+                >
+                  🚀 Tenant B User (tenant-b@example.com)
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
 
         {/* Section 1: 5-Tier System Health Checks */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -859,6 +1205,9 @@ export default function App() {
           </div>
         </section>
 
+        {/* Phase 14: Task Management Workspace */}
+        <TaskManagementStudio />
+
         {/* Section 2: Phase 7 & 8 — Agent Host & Tool Execution Studio */}
         <section className="bg-slate-900/60 backdrop-blur-md rounded-2xl border border-cyan-900/40 p-6 sm:p-8 shadow-2xl space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
@@ -872,13 +1221,13 @@ export default function App() {
                 </span>
                 <div>
                   <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    Agent Host & Tool Execution Studio
+                    Agent Host & Grounded RAG Studio
                     <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-700/50 text-cyan-300">
-                      Phase 11: Vector Database / Qdrant
+                      Phase 12: RAG & Grounded Generation
                     </span>
                   </h2>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    Host boundary: <code className="text-cyan-300 font-mono">LLM Proposes → Host Authorizes → Server Embeddings & Tenant Filter → Qdrant Vector Retrieval → LLM Observation</code>
+                    Pipeline boundary: <code className="text-cyan-300 font-mono">Qdrant Retrieval → Bounded Context → Grounded LLM Prompt → Structured Validation → Citation Integrity Verification</code>
                   </p>
                 </div>
               </div>
@@ -886,7 +1235,7 @@ export default function App() {
 
             <div className="flex flex-wrap items-center gap-2">
               <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-400">
-                Watchdogs: <strong className="text-cyan-300">10 Cycles</strong> &bull; <strong className="text-purple-300">10 Tools</strong> &bull; <strong className="text-emerald-300">5 Searches</strong> &bull; <strong className="text-cyan-400">5 Vectors</strong> &bull; <strong className="text-slate-200">180s</strong>
+                Grounding Rule: <strong className="text-emerald-300">Retrieve First &bull; Bound Context &bull; Validate Citations</strong>
               </span>
             </div>
           </div>
@@ -895,6 +1244,22 @@ export default function App() {
           <div className="flex items-center gap-2 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800 w-fit">
             <button
               type="button"
+              id="tab-rag"
+              onClick={() => {
+                setAgentMode('rag');
+                setRagQuestion('What is our remote work policy?');
+              }}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-2 ${
+                agentMode === 'rag'
+                  ? 'bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-950'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <span>🧠 Grounded RAG Studio (Phase 12)</span>
+            </button>
+            <button
+              type="button"
+              id="tab-tools"
               onClick={() => {
                 setAgentMode('tools');
                 setAgentTaskPrompt('What is our company remote work policy and how many days can employees work from home?');
@@ -905,10 +1270,11 @@ export default function App() {
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <span>⚡ Tool Calling & Semantic Retrieval (Phase 11)</span>
+              <span>⚡ Multi-Tool Agent (Phase 8–11)</span>
             </button>
             <button
               type="button"
+              id="tab-planning"
               onClick={() => {
                 setAgentMode('planning');
                 setAgentTaskPrompt('Find potential customers for our AI automation product.');
@@ -923,8 +1289,333 @@ export default function App() {
             </button>
           </div>
 
-          {/* Authoritative Tool Allowlist & Catalog Bar */}
-          {agentMode === 'tools' && (
+          {/* Grounded RAG Studio (Phase 12) */}
+          {agentMode === 'rag' && (
+            <div className="space-y-6">
+              {/* Quick Presets */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">
+                  Phase 12 Grounded RAG Presets & Grounding Benchmarks:
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRagQuestion('What is our remote work policy?');
+                      setRagScoreThreshold(0.0);
+                    }}
+                    className="text-[11px] px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-cyan-300 transition-colors cursor-pointer"
+                  >
+                    📖 Policy: Remote Work Guidelines
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRagQuestion('How quickly must customer support respond to tickets and what is the SLA for P1 outages?');
+                      setRagScoreThreshold(0.0);
+                    }}
+                    className="text-[11px] px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-cyan-300 transition-colors cursor-pointer"
+                  >
+                    🎧 SLA: Customer Support Protocol
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRagQuestion('What are our cryptographic standards for customer data encryption at rest and in transit?');
+                      setRagScoreThreshold(0.0);
+                    }}
+                    className="text-[11px] px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-cyan-500/50 text-cyan-300 transition-colors cursor-pointer"
+                  >
+                    🔒 Security: Cryptography Standards
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRagQuestion('Who is the specific individual that approves remote work expense requests and what is the relocation budget?');
+                      setRagScoreThreshold(0.0);
+                    }}
+                    className="text-[11px] px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-amber-500/50 text-amber-300 transition-colors cursor-pointer"
+                  >
+                    ❓ Unsupported Fact: Approver & Relocation
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRagQuestion('What is the company Mars exploration and interplanetary travel policy?');
+                      setRagScoreThreshold(0.0);
+                    }}
+                    className="text-[11px] px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-purple-500/50 text-purple-300 transition-colors cursor-pointer"
+                  >
+                    🚀 Out-of-Domain: Mars Policy (No Context)
+                  </button>
+                </div>
+              </div>
+
+              {/* RAG Query Form */}
+              <form onSubmit={handleRunRag} className="space-y-3">
+                <textarea
+                  rows={3}
+                  required
+                  value={ragQuestion}
+                  onChange={(e) => setRagQuestion(e.target.value)}
+                  placeholder="Ask a question about internal company policies, architecture, or customer support..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3.5 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono resize-y"
+                />
+
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-950/80 border border-slate-800/80">
+                  <div className="flex flex-wrap items-center gap-4 text-xs">
+                    {/* Top-K bound */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 font-mono text-[11px]">Top-K Chunks:</span>
+                      <select
+                        value={ragTopK}
+                        onChange={(e) => setRagTopK(Number(e.target.value))}
+                        className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500 cursor-pointer"
+                      >
+                        <option value={3}>3 chunks</option>
+                        <option value={5}>5 chunks (default)</option>
+                        <option value={8}>8 chunks</option>
+                        <option value={10}>10 chunks (max)</option>
+                      </select>
+                    </div>
+
+                    {/* Score Threshold */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 font-mono text-[11px]">Min Similarity:</span>
+                      <input
+                        type="range"
+                        min="0.0"
+                        max="0.8"
+                        step="0.05"
+                        value={ragScoreThreshold}
+                        onChange={(e) => setRagScoreThreshold(parseFloat(e.target.value))}
+                        className="w-24 accent-cyan-500 cursor-pointer"
+                      />
+                      <span className="text-cyan-300 font-mono text-[11px] w-8">{ragScoreThreshold.toFixed(2)}</span>
+                    </div>
+
+                    <div className="text-[11px] text-slate-500 font-mono hidden sm:inline">
+                      Endpoint: <code className="text-cyan-400">POST /api/rag/query</code>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    id="run-rag-btn"
+                    disabled={ragLoading || !ragQuestion.trim()}
+                    className="px-6 py-2.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white shadow-lg shadow-cyan-950 transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {ragLoading ? (
+                      <>
+                        <svg className="animate-spin h-3.5 w-3.5" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                        </svg>
+                        <span>Retrieving & Grounding...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        <span>Run Grounded RAG</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+
+              {/* Error Banner */}
+              {ragError && (
+                <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-300 text-xs flex items-start gap-2.5">
+                  <svg className="w-4 h-4 text-rose-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div>
+                    <strong>RAG Pipeline Error:</strong> {ragError}
+                  </div>
+                </div>
+              )}
+
+              {/* RAG Pipeline Result */}
+              {ragResult && (
+                <div className="space-y-5 pt-3 border-t border-slate-800">
+                  {/* Status & Guardrails Header */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-950 border border-cyan-900/40">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold font-mono flex items-center gap-1.5 ${
+                          ragResult.grounded
+                            ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/60'
+                            : 'bg-amber-950 text-amber-300 border border-amber-800/60'
+                        }`}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${ragResult.grounded ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+                        {ragResult.grounded ? '✓ GROUNDED' : '⚠️ INSUFFICIENT CONTEXT'}
+                      </span>
+
+                      <span className="px-3 py-1 rounded-full text-xs font-mono bg-cyan-950 text-cyan-300 border border-cyan-800/60 font-medium">
+                        🛡️ Source Integrity: {ragResult.sourceIds.length} Verified
+                      </span>
+                    </div>
+
+                    <div className="text-xs font-mono text-slate-400 flex items-center gap-3">
+                      <span>Model: <strong className="text-purple-300">{ragResult.telemetry.model}</strong></span>
+                      <span>Total Time: <strong className="text-white">{ragResult.telemetry.totalLatencyMs} ms</strong></span>
+                    </div>
+                  </div>
+
+                  {/* Grounded Answer Card */}
+                  <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900/90 to-slate-950 border border-cyan-500/30 shadow-2xl space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
+                      <span className="text-[11px] uppercase font-mono text-cyan-400 font-bold tracking-wider flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping"></span>
+                        Grounded Response
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-500">
+                        {ragResult.sources.length} sources bound to context
+                      </span>
+                    </div>
+                    <div className="text-sm font-sans text-slate-100 leading-relaxed whitespace-pre-wrap">
+                      {ragResult.answer}
+                    </div>
+                  </div>
+
+                  {/* Pipeline Execution Stages (Section 57 & 58) */}
+                  <div className="space-y-2">
+                    <span className="text-xs font-semibold text-slate-300 flex items-center gap-2">
+                      <span>RAG Pipeline Execution Stages:</span>
+                      <span className="text-[10px] text-slate-500 font-normal font-mono">Governed execution trace</span>
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 font-mono text-xs">
+                      {ragResult.pipeline.map((step, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-cyan-800/60 transition-colors flex flex-col justify-between"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="text-slate-500">STAGE {idx + 1}</span>
+                              <span className={`font-semibold px-2 py-0.5 rounded text-[9px] ${
+                                step.status === 'COMPLETED'
+                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/50'
+                                  : step.status === 'SKIPPED'
+                                  ? 'bg-slate-900 text-slate-400 border border-slate-800'
+                                  : 'bg-rose-950 text-rose-300 border border-rose-800/50'
+                              }`}>
+                                {step.status}
+                              </span>
+                            </div>
+                            <div className="font-bold text-white text-[11px] mt-1">{step.name}</div>
+                            {step.details && (
+                              <p className="text-[10px] text-slate-400 font-sans mt-0.5 leading-snug">{step.details}</p>
+                            )}
+                          </div>
+                          <div className="mt-2.5 pt-2 border-t border-slate-900 text-[10px] text-cyan-400 font-bold">
+                            {step.durationMs} ms
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Telemetry HUD */}
+                  <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono">
+                    <div>
+                      <span className="text-[10px] text-slate-500 block uppercase">Retrieval</span>
+                      <span className="font-semibold text-cyan-300">{ragResult.telemetry.retrievalLatencyMs} ms</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 block uppercase">Context Bounding</span>
+                      <span className="font-semibold text-indigo-300">{ragResult.telemetry.contextBuildingLatencyMs} ms</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 block uppercase">Generation</span>
+                      <span className="font-semibold text-purple-300">{ragResult.telemetry.generationLatencyMs} ms</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 block uppercase">Total Latency</span>
+                      <span className="font-semibold text-white">{ragResult.telemetry.totalLatencyMs} ms</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 block uppercase">Tokens (In / Out)</span>
+                      <span className="font-semibold text-slate-200">
+                        {ragResult.telemetry.promptTokens} / {ragResult.telemetry.completionTokens}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 block uppercase">Est. Cost</span>
+                      <span className="font-semibold text-amber-300">${ragResult.telemetry.estimatedCostUsd.toFixed(6)}</span>
+                    </div>
+                  </div>
+
+                  {/* Source Evidence Cards (Section 54 & 55) */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-slate-200 flex items-center gap-2">
+                        <span>Attributed Source Evidence ({ragResult.sources.length} chunks used):</span>
+                        <span className="text-[10px] text-slate-500 font-normal font-mono">Deterministic source map</span>
+                      </span>
+                    </div>
+
+                    {ragResult.sources.length > 0 ? (
+                      <div className="space-y-3">
+                        {ragResult.sources.map((src) => (
+                          <div
+                            key={src.sourceId}
+                            className="p-4 rounded-xl bg-slate-950/90 border border-slate-800 hover:border-cyan-800/60 transition-all space-y-2.5 shadow-md"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/70 pb-2">
+                              <div className="flex items-center gap-2.5">
+                                <span className="px-2.5 py-0.5 rounded-lg bg-cyan-950 text-cyan-300 border border-cyan-800/80 font-mono font-bold text-xs">
+                                  [{src.sourceId}]
+                                </span>
+                                <span className="text-xs font-bold text-white">{src.title}</span>
+                                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-900 text-slate-400 border border-slate-800">
+                                  {src.source}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-950 text-emerald-300 border border-emerald-800/50">
+                                  Retrieval Similarity: {src.score.toFixed(4)}
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-500">
+                                  {src.chunkId}
+                                </span>
+                              </div>
+                            </div>
+                            <p className="text-[11px] text-slate-200 leading-relaxed font-sans bg-slate-900/60 p-3 rounded-lg border border-slate-800/50 whitespace-pre-wrap">
+                              {src.text}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 text-xs text-slate-400 text-center">
+                        No sources cited. System deterministically abstained from answering to prevent hallucination.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Expandable Inspection */}
+                  <details className="text-xs group">
+                    <summary className="cursor-pointer text-[11px] font-mono text-slate-500 hover:text-slate-300 select-none">
+                      ▸ Inspect Full RAG Diagnostic Payload (JSON)
+                    </summary>
+                    <div className="mt-2 p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-cyan-300 overflow-x-auto whitespace-pre-wrap">
+                      {JSON.stringify(ragResult, null, 2)}
+                    </div>
+                  </details>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Multi-Tool & Step Planning Agent View (Phase 7–11) */}
+          {agentMode !== 'rag' && (
+            <>
+              {/* Authoritative Tool Allowlist & Catalog Bar */}
+              {agentMode === 'tools' && (
             <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800/80 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
@@ -1360,6 +2051,71 @@ export default function App() {
                               </div>
                             </details>
                           </div>
+                        ) : exec.tool === 'rag_query' && exec.result && typeof exec.result === 'object' ? (
+                          <div className="space-y-3">
+                            <div className="flex flex-wrap items-center justify-between text-xs px-1 gap-2">
+                              <span className="text-slate-400">
+                                Grounded RAG Query: <span className="font-semibold text-cyan-300 font-mono">"{(exec.arguments as any)?.question}"</span>
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2.5 py-0.5 rounded text-[11px] font-mono font-semibold ${
+                                  (exec.result as any)?.grounded
+                                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/60'
+                                    : 'bg-amber-950 text-amber-300 border border-amber-800/60'
+                                }`}>
+                                  {(exec.result as any)?.grounded ? '✓ GROUNDED' : '⚠️ INSUFFICIENT CONTEXT'}
+                                </span>
+                                <span className="text-[11px] text-cyan-300 font-mono bg-cyan-950/80 border border-cyan-800/60 px-2 py-0.5 rounded-full">
+                                  {((exec.result as any)?.sources || []).length} Sources Cited
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="p-3.5 rounded-lg bg-slate-900/90 border border-slate-800 space-y-2">
+                              <div className="text-xs text-slate-100 font-medium leading-relaxed whitespace-pre-wrap">
+                                {(exec.result as any)?.answer}
+                              </div>
+                              {((exec.result as any)?.sources || []).length > 0 && (
+                                <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
+                                  <span className="text-[10px] text-slate-400 uppercase font-mono block">Attributed Sources:</span>
+                                  {((exec.result as any)?.sources || []).map((s: any, sIdx: number) => (
+                                    <div key={sIdx} className="flex items-center justify-between gap-2 p-1.5 rounded bg-slate-950/80 text-[10px] font-mono">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-cyan-300 font-bold">[{s.sourceId}]</span>
+                                        <span className="text-slate-200">{s.title}</span>
+                                        <span className="text-slate-500">({s.source})</span>
+                                      </div>
+                                      <span className="text-emerald-400">Score: {typeof s.score === 'number' ? s.score.toFixed(4) : s.score}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            <details className="text-xs group">
+                              <summary className="cursor-pointer text-[11px] font-mono text-slate-500 hover:text-slate-300 select-none">
+                                ▸ Inspect Full Grounded RAG Observation Payload
+                              </summary>
+                              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">
+                                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans font-medium">
+                                    Validated Input (Zod)
+                                  </span>
+                                  <pre className="text-[11px] text-cyan-300 overflow-x-auto whitespace-pre-wrap">
+                                    {JSON.stringify(exec.arguments, null, 2)}
+                                  </pre>
+                                </div>
+                                <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 font-mono space-y-1">
+                                  <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-sans font-medium">
+                                    Authoritative Observation
+                                  </span>
+                                  <pre className="text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap">
+                                    {JSON.stringify(exec.result, null, 2)}
+                                  </pre>
+                                </div>
+                              </div>
+                            </details>
+                          </div>
                         ) : exec.tool === 'vector_search' && exec.result && typeof exec.result === 'object' ? (
                           <div className="space-y-3">
                             <div className="flex flex-wrap items-center justify-between text-xs px-1 gap-2">
@@ -1524,6 +2280,8 @@ export default function App() {
               )}
             </div>
           )}
+        </>
+      )}
 
           {/* Recent Agent Tasks Log */}
           <div className="space-y-3 pt-3 border-t border-slate-800">

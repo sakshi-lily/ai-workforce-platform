@@ -41,4 +41,9 @@ export const config = {
     apiKey: process.env.QDRANT_API_KEY || undefined,
     collection: process.env.QDRANT_COLLECTION || "internal_knowledge",
   },
+  auth: {
+    jwtSecret: process.env.JWT_SECRET || "ai_workforce_platform_dev_secret_jwt_key_2026",
+    jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
+    saltRounds: 10,
+  },
 };

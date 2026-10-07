@@ -5,17 +5,19 @@ import { calculateTool } from "./implementations/calculate";
 import { webSearchTool } from "./implementations/webSearch";
 import { mysqlVerifyCustomerTool } from "./implementations/mysqlVerifyCustomer";
 import { vectorSearchTool } from "./implementations/vectorSearch";
+import { ragQueryTool } from "./implementations/ragQuery";
 
 export class ToolRegistry {
   private tools: Map<string, Tool> = new Map();
 
   constructor() {
-    // Register Phase 8, 9, 10 & 11 safe authorized tools
+    // Register Phase 8, 9, 10, 11 & 12 safe authorized tools
     this.registerTool(getCurrentTimeTool);
     this.registerTool(calculateTool);
     this.registerTool(webSearchTool);
     this.registerTool(mysqlVerifyCustomerTool);
     this.registerTool(vectorSearchTool);
+    this.registerTool(ragQueryTool);
   }
 
   /**
@@ -124,6 +126,19 @@ export class ToolRegistry {
           },
         };
         required = ["query"];
+      } else if (t.name === "rag_query") {
+        properties = {
+          question: {
+            type: "string",
+            description: "Natural language question to answer using the internal knowledge base with grounded citations",
+          },
+          top_k: {
+            type: "integer",
+            description: "Maximum number of relevant chunks to retrieve (1-10)",
+            default: 5,
+          },
+        };
+        required = ["question"];
       }
 
       return {
