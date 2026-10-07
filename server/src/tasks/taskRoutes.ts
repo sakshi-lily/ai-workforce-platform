@@ -184,22 +184,45 @@ taskRouter.patch("/:taskId", async (req: Request, res: Response): Promise<void> 
 
 /**
  * POST /api/tasks/:taskId/run
- * Executes a task through the Agent Host. Transitions REQUESTED -> RUNNING -> COMPLETED/FAILED.
+ * Executes a task through background workers (Phase 18 HTTP 202 flow) or synchronously if requested.
  * Rejects duplicate execution or invalid state transitions with 409 Conflict.
  */
 taskRouter.post("/:taskId/run", async (req: Request, res: Response): Promise<void> => {
   try {
-    const { mode, allowedTools } = req.body || {};
-    const executionResult = await taskService.runTask(
+    const { mode, allowedTools, sync } = req.body || {};
+    const isSync =
+      sync === true ||
+      req.query.sync === "true" ||
+      req.headers["x-execution-mode"] === "sync";
+
+    if (isSync) {
+      // Synchronous execution (Phase 14 backward compatibility)
+      const executionResult = await taskService.runTask(
+        req.params.taskId,
+        req.organizationId!,
+        req.user!,
+        { mode, allowedTools }
+      );
+
+      res.status(200).json({
+        status: "success",
+        data: executionResult,
+      });
+      return;
+    }
+
+    // Default Phase 18: Asynchronous background worker dispatch (HTTP 202 Accepted)
+    const queueResult = await taskService.enqueueTask(
       req.params.taskId,
       req.organizationId!,
       req.user!,
       { mode, allowedTools }
     );
 
-    res.status(200).json({
+    res.status(202).json({
       status: "success",
-      data: executionResult,
+      message: "Task accepted and queued for background worker execution.",
+      data: queueResult,
     });
   } catch (error: any) {
     if (error instanceof TaskNotFoundError) {

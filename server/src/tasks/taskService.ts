@@ -417,12 +417,64 @@ export class TaskService {
       }
     }
 
+    // Phase 18: Cancel any pending or active jobs for this task in the queue
+    try {
+      const { jobQueue } = await import("../jobs/queue");
+      await jobQueue.cancel(taskId);
+    } catch (err) {
+      console.warn("[TaskService Cancel Queue Warning]", err);
+    }
+
     await this.recordTaskAudit(authUser.id, organizationId, taskId, "TASK_CANCELLED", {
       previousStatus: task.status,
     });
 
     const updated = await this.getTaskByIdInternal(taskId);
     return updated!;
+  }
+
+  /**
+   * Phase 18: Enqueues a task for asynchronous background worker execution (HTTP 202 flow).
+   */
+  public async enqueueTask(
+    taskId: string,
+    organizationId: string,
+    authUser: AuthenticatedUser,
+    options?: {
+      mode?: "tools" | "planning";
+      allowedTools?: string[];
+    }
+  ): Promise<{ taskId: string; status: TaskLifecycleState; jobId: string }> {
+    const task = await this.getTaskByIdInternal(taskId);
+    if (!task || task.organization_id !== organizationId) {
+      throw new TaskNotFoundError(taskId);
+    }
+
+    if (task.status === "RUNNING") {
+      throw new TaskAlreadyRunningError(taskId);
+    }
+
+    assertValidTaskTransition(task.status, "QUEUED");
+
+    const { jobQueue } = await import("../jobs/queue");
+    const job = await jobQueue.enqueue({
+      taskId,
+      organizationId,
+      type: "TASK_EXECUTION",
+      priority: task.priority || "NORMAL",
+      payload: { options },
+    });
+
+    await this.recordTaskAudit(authUser.id, organizationId, taskId, "TASK_QUEUED", {
+      jobId: job.id,
+      priority: job.priority,
+    });
+
+    return {
+      taskId,
+      status: "QUEUED",
+      jobId: job.id,
+    };
   }
 
   /**

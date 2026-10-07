@@ -21,6 +21,17 @@ async function bootstrap() {
     console.warn("[AI Workforce Platform Backend] Redis connection initialization deferred:", error);
   }
 
+  // 3. Optionally start background worker in-process if enabled
+  if (process.env.START_IN_PROCESS_WORKER === "true") {
+    try {
+      const { backgroundWorker } = await import("./jobs/worker");
+      await backgroundWorker.start();
+      console.log("[AI Workforce Platform Backend] In-process background worker started.");
+    } catch (error) {
+      console.warn("[AI Workforce Platform Backend] In-process worker start warning:", error);
+    }
+  }
+
   app.listen(PORT, () => {
     console.log(`[AI Workforce Platform Backend] Server is running on http://localhost:${PORT}`);
     console.log(`[AI Workforce Platform Backend] Process health check: http://localhost:${PORT}/api/health`);

@@ -464,7 +464,7 @@ export async function runPhase14VerificationSuite(): Promise<{
 
   await runTest("Execution", "Runs task through Agent Host and verifies COMPLETED status", async () => {
     const res = await request(app)
-      .post(`/api/tasks/${runTaskId}/run`)
+      .post(`/api/tasks/${runTaskId}/run?sync=true`)
       .set("Authorization", `Bearer ${tokenA}`)
       .send({
         allowedTools: ["get_current_time", "calculate"],

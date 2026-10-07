@@ -113,7 +113,7 @@ The central operational entity representing a durable unit of AI work.
 - `organization_id` (VARCHAR 64): Authoritative tenant ID for strict query scoping.
 - `title` (VARCHAR 255): Human-readable task title.
 - `prompt` / `goal` (TEXT): Original user natural-language goal.
-- `status` (ENUM 'PENDING', 'REQUESTED', 'IN_PROGRESS', 'RUNNING', 'AWAITING_APPROVAL', 'WAITING_FOR_APPROVAL', 'COMPLETED', 'FAILED', 'CANCELLED'): Authoritative host-controlled state machine (extended in Phase 17 with `WAITING_FOR_APPROVAL`).
+- `status` (ENUM 'PENDING', 'REQUESTED', 'QUEUED', 'IN_PROGRESS', 'RUNNING', 'AWAITING_APPROVAL', 'WAITING_FOR_APPROVAL', 'COMPLETED', 'FAILED', 'CANCELLED'): Authoritative host-controlled state machine (extended in Phase 18 with `QUEUED`).
 - `priority` (ENUM 'LOW', 'NORMAL', 'HIGH', 'URGENT'): Execution priority.
 - `final_report` (MEDIUMTEXT): Durable validated outcome/synthesis.
 - `prompt_tokens`, `completion_tokens`, `total_cost_usd`: Telemetry metrics.
@@ -168,3 +168,35 @@ Stores durable OAuth connection states and credentials encrypted at rest for ext
 - `status` (ENUM 'CONNECTED', 'DISCONNECTED', 'EXPIRED', 'REAUTH_REQUIRED', 'ERROR'): Connection lifecycle state.
 - `created_at`, `updated_at`: Timestamps.
 - Indexes: `(user_id, organization_id)`, `email_address`, `status`.
+
+### 2.10 `jobs` (Phase 18)
+Durable relational operational record backing the Redis asynchronous execution queue. Tracks attempts, scheduling timestamps, and execution errors.
+- `id` (VARCHAR 64 PK): Unique job identifier (`job_...`).
+- `task_id` (VARCHAR 36 FK): Linked parent task.
+- `organization_id` (VARCHAR 64): Authoritative tenant ID for strict query scoping.
+- `type` (ENUM 'TASK_EXECUTION', 'TASK_RESUME', 'TASK_RETRY'): Job execution type.
+- `status` (ENUM 'QUEUED', 'ACTIVE', 'COMPLETED', 'FAILED', 'RETRYING', 'CANCELLED', 'EXHAUSTED'): Job execution lifecycle.
+- `priority` (ENUM 'LOW', 'NORMAL', 'HIGH', 'URGENT'): Scheduling priority.
+- `attempts` (INT): Current attempt counter (0-indexed).
+- `max_attempts` (INT): Maximum retry threshold (default: 3).
+- `worker_id` (VARCHAR 64 NULL): Identity of worker that processed the job.
+- `last_error` (TEXT NULL): Sanitized error message or code.
+- `payload` (JSON NULL): Minimal options payload (zero secrets).
+- `available_at` (TIMESTAMP): Schedule/retry backoff maturity time.
+- `started_at` (TIMESTAMP NULL): Execution start timestamp.
+- `completed_at` (TIMESTAMP NULL): Completion timestamp.
+- `failed_at` (TIMESTAMP NULL): Final failure timestamp.
+- `created_at`, `updated_at`: Timestamps.
+- Indexes: `(status, priority, available_at)`, `(task_id, status)`, `(organization_id, status)`.
+
+### 2.11 `worker_heartbeats` (Phase 18)
+Operational registry tracking active background worker processes, heartbeats, and cluster health.
+- `worker_id` (VARCHAR 64 PK): Unique worker instance identifier (`worker_...`).
+- `process_id` (INT): Operating system PID.
+- `status` (ENUM 'ONLINE', 'DRAINING', 'STOPPED', 'CRASHED'): Worker status.
+- `concurrency` (INT): Configured worker task execution concurrency.
+- `active_jobs` (INT): Currently running job count.
+- `last_heartbeat` (TIMESTAMP): Periodic heartbeat timestamp (updated every 10s).
+- `started_at` (TIMESTAMP): Worker startup timestamp.
+- Indexes: `(status, last_heartbeat)`.
+

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../auth/AuthContext';
 
-export type TaskStatus = 'REQUESTED' | 'RUNNING' | 'WAITING_FOR_APPROVAL' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type TaskStatus = 'REQUESTED' | 'QUEUED' | 'RUNNING' | 'WAITING_FOR_APPROVAL' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type TaskPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
 
 export interface TaskSummary {
@@ -182,11 +182,14 @@ export const TaskManagementStudio: React.FC = () => {
     }
   }, [selectedTaskId, fetchTaskDetails]);
 
-  // Polling effect: if selected task or any listed task is RUNNING, poll every 2.5s
+  // Polling effect: if selected task or any listed task is QUEUED or RUNNING, poll every 2.5s
   useEffect(() => {
-    const isRunning = taskDetails?.task?.status === 'RUNNING' || tasks.some(t => t.status === 'RUNNING');
+    const isActive =
+      taskDetails?.task?.status === 'RUNNING' ||
+      taskDetails?.task?.status === 'QUEUED' ||
+      tasks.some((t) => t.status === 'RUNNING' || t.status === 'QUEUED');
 
-    if (isRunning) {
+    if (isActive) {
       pollTimerRef.current = setTimeout(() => {
         fetchTasks();
         if (selectedTaskId) {
@@ -258,7 +261,17 @@ export const TaskManagementStudio: React.FC = () => {
         throw new Error(json.error?.message || json.message || 'Task execution failed');
       }
 
-      setActionMessage({ type: 'success', text: `Task completed with status: ${json.data?.status || 'COMPLETED'}` });
+      if (res.status === 202) {
+        setActionMessage({
+          type: 'success',
+          text: `Task queued for background execution (HTTP 202 Accepted). Job: ${json.data?.jobId?.substring(0, 10)}...`,
+        });
+      } else {
+        setActionMessage({
+          type: 'success',
+          text: `Task completed with status: ${json.data?.status || 'COMPLETED'}`,
+        });
+      }
       await fetchTaskDetails(taskId);
       await fetchTasks();
     } catch (err: unknown) {
@@ -338,6 +351,13 @@ export const TaskManagementStudio: React.FC = () => {
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-amber-950/80 text-amber-300 border border-amber-700/60">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
             REQUESTED
+          </span>
+        );
+      case 'QUEUED':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-semibold bg-sky-950/90 text-sky-300 border border-sky-600">
+            <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"></span>
+            QUEUED
           </span>
         );
       case 'RUNNING':
@@ -622,7 +642,7 @@ export const TaskManagementStudio: React.FC = () => {
           <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-slate-800 shadow-xl space-y-3">
             {/* Status Filter Chips */}
             <div className="flex flex-wrap items-center gap-1.5 text-xs border-b border-slate-800/80 pb-3">
-              {['ALL', 'REQUESTED', 'RUNNING', 'WAITING_FOR_APPROVAL', 'COMPLETED', 'FAILED', 'CANCELLED'].map((st) => (
+              {['ALL', 'REQUESTED', 'QUEUED', 'RUNNING', 'WAITING_FOR_APPROVAL', 'COMPLETED', 'FAILED', 'CANCELLED'].map((st) => (
                 <button
                   key={st}
                   type="button"

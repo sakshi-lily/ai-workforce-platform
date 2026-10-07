@@ -6,6 +6,7 @@
 
 export type TaskLifecycleState =
   | "REQUESTED"
+  | "QUEUED"
   | "RUNNING"
   | "WAITING_FOR_APPROVAL"
   | "COMPLETED"

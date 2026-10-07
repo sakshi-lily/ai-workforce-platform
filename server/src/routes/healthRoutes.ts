@@ -92,3 +92,36 @@ healthRouter.get("/qdrant", async (_req: Request, res: Response) => {
     });
   }
 });
+
+// Phase 18 — Background Worker & Job Queue health check
+healthRouter.get("/worker", async (_req: Request, res: Response) => {
+  try {
+    const { jobQueue } = await import("../jobs/queue");
+    const redisHealth = await checkRedisHealth();
+    const metrics = await jobQueue.getMetrics();
+    const isHealthy = redisHealth.connected;
+
+    res.status(isHealthy ? 200 : 503).json({
+      status: isHealthy ? "healthy" : "degraded",
+      worker: {
+        onlineWorkers: metrics.onlineWorkers,
+        activeJobs: metrics.active,
+        queuedJobs: metrics.queued,
+        delayedJobs: metrics.delayed,
+        completedJobs: metrics.completed,
+        failedJobs: metrics.failed,
+        exhaustedJobs: metrics.exhausted,
+      },
+      redis: {
+        connected: redisHealth.connected,
+        latencyMs: redisHealth.latencyMs,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      status: "unhealthy",
+      error: error.message || "Failed to inspect worker health",
+    });
+  }
+});

@@ -235,8 +235,22 @@ All task management endpoints require authentication (`Authorization: Bearer <to
 
 ### 1.5 Run Task
 - **Endpoint:** `POST /api/tasks/:taskId/run`
-- **Description:** Transitions task from `REQUESTED` to `RUNNING` and executes via Agent Host. Rejects duplicate execution with `409 TASK_ALREADY_RUNNING` and terminal states with `409 INVALID_TASK_STATE_TRANSITION`.
-- **Response (HTTP 200 OK):** Execution outcome and updated task details.
+- **Description:** Default Phase 18 asynchronous mode: Transitions task from `REQUESTED` to `QUEUED`, enqueues a priority job in Redis, and returns `HTTP 202 Accepted` immediately. Background workers dequeue and execute the task. Rejects duplicate execution with `409 TASK_ALREADY_RUNNING` and terminal states with `409 INVALID_TASK_STATE_TRANSITION`.
+- **Query Parameter / Header (Optional):**
+  - `?sync=true` or `X-Execution-Mode: sync`: Forces synchronous execution (HTTP 200 OK upon task completion).
+- **Response (HTTP 202 Accepted):**
+  ```json
+  {
+    "status": "success",
+    "message": "Task accepted and queued for background worker execution.",
+    "data": {
+      "taskId": "e963ff75-01e4-4ea6-a797-40ae5bb2f618",
+      "jobId": "job_312f2c904e5743b593ef983e",
+      "status": "QUEUED"
+    }
+  }
+  ```
+- **Synchronous Response (HTTP 200 OK):** Execution outcome and updated task details (when `sync=true`).
 
 ---
 
@@ -606,4 +620,67 @@ All approval endpoints require `Authorization: Bearer <JWT>`. Organization conte
   }
   ```
 - **Description:** Cancels a pending approval.
+
+---
+
+## 6. Background Workers & Job Queue Endpoints (Phase 18)
+
+### 6.1 Worker Health & Metrics
+- **Endpoint:** `GET /api/health/worker`
+- **Authentication:** Public or Operator
+- **Description:** Returns live worker health, online heartbeat status, and queue telemetry.
+- **Response (HTTP 200 OK):**
+  ```json
+  {
+    "status": "healthy",
+    "timestamp": "2026-10-07T17:15:00.000Z",
+    "worker": {
+      "online": true,
+      "onlineWorkers": 1,
+      "workers": [
+        {
+          "workerId": "worker_prod_1",
+          "processId": 12430,
+          "status": "ONLINE",
+          "lastHeartbeat": "2026-10-07T17:14:58.000Z"
+        }
+      ]
+    },
+    "queue": {
+      "pending": 0,
+      "active": 1,
+      "delayed": 0,
+      "completed": 14,
+      "failed": 0,
+      "exhausted": 0
+    }
+  }
+  ```
+
+### 6.2 Get Job Details
+- **Endpoint:** `GET /api/jobs/:id`
+- **Authentication:** `Authorization: Bearer <JWT>`
+- **Description:** Retrieves durable execution job status, attempt count, and last error. Anti-IDOR protected by tenant organization ID.
+- **Response (HTTP 200 OK):**
+  ```json
+  {
+    "status": "success",
+    "data": {
+      "id": "job_312f2c904e5743b593ef983e",
+      "taskId": "e963ff75-01e4-4ea6-a797-40ae5bb2f618",
+      "type": "TASK_EXECUTION",
+      "status": "ACTIVE",
+      "attempts": 1,
+      "maxAttempts": 3,
+      "workerId": "worker_prod_1",
+      "startedAt": "2026-10-07T17:14:50.000Z"
+    }
+  }
+  ```
+
+### 6.3 Get Job by Task ID
+- **Endpoint:** `GET /api/jobs/task/:taskId`
+- **Authentication:** `Authorization: Bearer <JWT>`
+- **Description:** Looks up latest job record associated with a specific task.
+
 

@@ -11,7 +11,9 @@
     "test:phase14": "tsx src/tasks/testPhase14.ts",
     "test:phase15": "tsx src/agent/testPhase15.ts",
     "test:phase16": "tsx src/integrations/gmail/testPhase16.ts",
-    "test:phase17": "tsx src/approvals/testPhase17.ts"
+    "test:phase17": "tsx src/approvals/testPhase17.ts",
+    "test:phase18": "tsx src/jobs/testPhase18.ts",
+    "worker": "tsx src/jobs/workerRunner.ts"
   },
   "dependencies": {
     "@qdrant/js-client-rest": "^1.19.0",

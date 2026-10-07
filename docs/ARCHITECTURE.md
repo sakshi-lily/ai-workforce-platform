@@ -400,3 +400,60 @@ sequenceDiagram
 3. **Double-Execution Guard:** Atomic transition (`APPROVED` -> `EXECUTING`) prevents duplicate execution during network retries or concurrent clicks.
 4. **Anti-IDOR & Multi-Tenancy:** Scoped by authenticated `organizationId`; cross-tenant review is rejected with 404/403.
 5. **No Blind Approval:** Human review UI displays complete proposed action details (tool, recipient, subject, sanitized body preview, risk badge, TTL countdown) and captures reviewer notes.
+
+---
+
+## 13. Background Workers & Durable Asynchronous Execution (Phase 18)
+
+Phase 18 completely decouples AI workforce task execution from the Express HTTP request lifecycle, moving long-running agent workloads to durable background workers.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User (React UI)
+    participant API as Express API
+    participant Queue as Redis Priority Queue
+    participant Lock as Redis Lock Manager
+    participant DB as MySQL DB
+    participant Worker as Background Worker Process
+    participant Agent as Agent Runtime
+    participant Approval as Human Approval (Phase 17)
+
+    User->>API: POST /api/tasks/:id/run
+    API->>DB: Verify ownership & transition task to QUEUED
+    API->>Queue: enqueue({ taskId, priority, organizationId })
+    API-->>User: HTTP 202 Accepted { taskId, jobId, status: 'QUEUED' }
+
+    Note over User,API: Fast response — Browser can close safely
+
+    loop Worker Polling Loop
+        Worker->>Queue: dequeue() (Priority ZSET order)
+        Queue-->>Worker: job { id, taskId, type }
+        Worker->>Lock: acquireLock(taskId, workerId, ttl)
+        Lock-->>Worker: Lock Acquired
+        Worker->>DB: Load authoritative task & user context
+        Worker->>DB: UPDATE tasks SET status='RUNNING'
+        Worker->>Agent: executeTask(context)
+        
+        alt Approval Required (Phase 17)
+            Agent-->>Worker: Pause on WAITING_FOR_APPROVAL
+            Worker->>Lock: releaseLock(taskId, workerId)
+            Worker->>Queue: completeJob(jobId)
+            Note over Worker,Approval: Worker exits job safely; task waits in MySQL
+        else Normal Execution
+            Agent-->>Worker: Task COMPLETED
+            Worker->>DB: Persist final report & token telemetry
+            Worker->>Lock: releaseLock(taskId, workerId)
+            Worker->>Queue: completeJob(jobId)
+        end
+    end
+```
+
+### Core Worker Principles:
+1. **The API Creates Work; Workers Execute Work:** Express never executes long-running agent loops directly on `/run`; all requests return `HTTP 202 Accepted`.
+2. **Minimal Queue Payloads:** Redis queue items store strictly identifiers (`taskId`, `organizationId`, `type`, options); zero tokens, secrets, or unbounded prompt context.
+3. **Distributed Execution Locks:** Redis `SET lock:task:<taskId> <workerId> EX <ttl> NX` guarantees at most one active execution per task. Lease is renewed periodically via Lua heartbeat and safely released with owner verification.
+4. **Authoritative Context Derivation:** The worker derives identity and tenancy directly from database rows (`task.user_id`, `task.organization_id`), ignoring spoofed queue metadata.
+5. **Bounded Retries with Backoff & Jitter:** Transient provider errors trigger exponential backoff with full jitter; non-retryable errors fail immediately to terminal `FAILED`.
+6. **Graceful Shutdown:** Workers catch process signals (`SIGINT`, `SIGTERM`), cease dequeuing, finish in-flight safe execution checkpoints, and exit cleanly.
+

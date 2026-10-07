@@ -9,6 +9,7 @@ import { authRouter } from "./routes/authRoutes";
 import { taskRouter } from "./tasks/taskRoutes";
 import { gmailRouter } from "./integrations/gmail/gmailRoutes";
 import { approvalRouter } from "./approvals/approvalRoutes";
+import { workerRouter } from "./jobs/workerRoutes";
 
 export const app = express();
 
@@ -17,7 +18,7 @@ app.use(
   cors({
     origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Execution-Mode"],
   })
 );
 
@@ -31,6 +32,7 @@ app.use("/api/ai", aiRouter);
 app.use("/api/agent", agentRouter);
 app.use("/api/rag", ragRouter);
 app.use("/api/tasks", taskRouter);
+app.use("/api/jobs", workerRouter);
 app.use("/api/integrations/gmail", gmailRouter);
 app.use("/api/approvals", approvalRouter);
 

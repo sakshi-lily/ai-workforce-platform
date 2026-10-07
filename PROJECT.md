@@ -1,24 +1,24 @@
 # AI Workforce Platform
 
-## Current Status: Phase 17 — Human Approval & Controlled External Actions (COMPLETED ✅)
+## Current Status: Phase 18 — Background Workers & Durable Asynchronous Execution (COMPLETED ✅)
 
 ### Project Status
 
-**Current Phase:** Phase 17 — Human Approval & Controlled External Actions  
-**Stage:** Phase 17 Completed & Verified (Ready for Phase 18: Background Workers)  
+**Current Phase:** Phase 18 — Background Workers & Durable Asynchronous Execution  
+**Stage:** Phase 18 Completed & Verified (Ready for Phase 19: Reliability)  
 **Developer:** Sakshi
 
-### Phase 17 Deliverables Summary (Human Approval & Controlled Actions)
-- [x] **Durable Approval State Machine:** Implemented strict lifecycle transitions (`PENDING` -> `APPROVED` -> `EXECUTING` -> `EXECUTED`, or `REJECTED`, `EXPIRED`, `CANCELLED`) backed by relational MySQL persistence.
-- [x] **Centralized Policy Engine:** Centralized risk classification policy (`ApprovalPolicyEngine`) routing `EXTERNAL_SIDE_EFFECT` tools to mandatory human approval queues while allowing safe `READ_ONLY` and `LOW_RISK` tools to proceed autonomously.
-- [x] **Zero LLM & Zero Client Bypass:** Formalized that approval is an authenticated, server-verified database state transition; rejected fake client booleans, prompt injections, and mock LLM approvals.
-- [x] **Immutable Action & Payload Binding:** Previews and stored execution payloads are locked at creation time; attempts to tamper with recipients or body content are strictly blocked.
-- [x] **Double-Execution & Concurrency Protection:** Atomic conditional updates (`UPDATE approvals SET status = 'EXECUTING' WHERE id = ? AND status = 'APPROVED'`) prevent race conditions and duplicate real-world side effects.
-- [x] **Multi-Tenant Isolation & Anti-IDOR:** All approval operations are scoped by authenticated `organizationId`; cross-tenant viewing and decisions are strictly blocked.
-- [x] **Dynamic TTL & Expiration Handling:** Configurable approval TTL with automatic expiration checks blocking stale authorizations.
-- [x] **Agent Runtime Integration (`WAITING_FOR_APPROVAL`):** The Agent pauses cleanly without pretending the tool executed; when approved, it executes under policy re-check and completes the task; when rejected, it halts safely with reviewer feedback.
-- [x] **Dedicated Human Review UI:** Built `/app/approvals` Review Center with detailed action preview (tool, risk, recipient, subject, sanitized body, countdown) and rejection note prompt.
-- [x] **Comprehensive Verification:** 21/21 tests passed in `testPhase17.ts`. 125/125 tests passed across Phases 13–17 regression suite. Documented in `PHASE_17.md`.
+### Phase 18 Deliverables Summary (Background Workers & Asynchronous Execution)
+- [x] **Redis-Backed Job Queue:** Implemented priority-based job queue with ZSET scoring, delayed retry scheduling, and active execution tracking in `server/src/jobs/queue.ts`.
+- [x] **Distributed Execution Lock Manager:** Anti-collision locking (`SET NX EX`) with periodic Lua heartbeat renewal and safe atomic owner-verified release preventing duplicate task runs.
+- [x] **Asynchronous HTTP 202 Lifecycle:** `POST /api/tasks/:taskId/run` accepts work, updates state to `QUEUED`, and returns `HTTP 202 Accepted` immediately, decoupling execution from HTTP connections.
+- [x] **Authoritative Worker Authorization:** Background workers load context from MySQL and verify tenant organization boundaries; untrusted queue parameters cannot spoof permissions.
+- [x] **Minimal Queue Payloads:** Payloads contain strictly task identity and execution options; zero credentials, OAuth tokens, or sensitive context in queue messages.
+- [x] **Bounded Retries with Backoff & Jitter:** Transient errors trigger exponential backoff with random jitter; non-retryable errors or exhausted retries fail gracefully to terminal `FAILED`.
+- [x] **Phase 17 Approval Integration:** Clean worker pause on `WAITING_FOR_APPROVAL` with lock release; automatic `TASK_RESUME` background job submission upon human approval.
+- [x] **Worker Observability & Health:** `GET /api/health/worker` and `/api/jobs` endpoints providing live worker heartbeats, concurrency, and queue telemetry.
+- [x] **Standalone Worker Process:** `npm run worker` script allows executing workers in dedicated worker processes with graceful shutdown (`SIGINT`/`SIGTERM`).
+- [x] **Comprehensive Verification:** 13/13 tests passed in `testPhase18.ts`. 138/138 tests passed across all platform test suites (Phases 13–18). Documented in `PHASE_18.md`.
 
 ---
 
