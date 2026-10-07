@@ -405,7 +405,7 @@ export const TaskManagementStudio: React.FC = () => {
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xl">💼</span>
-            <h2 className="text-base font-bold text-white tracking-tight">
+            <h2 className="font-display text-xl font-medium text-white tracking-tight">
               Task Management & Workforce Lifecycle
             </h2>
             <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-indigo-900/60 text-indigo-300 border border-indigo-700/50">

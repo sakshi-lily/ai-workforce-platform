@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, typ
 export interface AuthUser {
   id: string;
   email: string;
+  fullName?: string;
   organizationId: string;
   role: 'USER' | 'ADMIN';
 }
@@ -15,7 +16,7 @@ interface AuthContextValue {
   authState: AuthState;
   error: string | null;
   login: (email: string, password: string) => Promise<boolean>;
-  register: (email: string, password: string, organizationId?: string) => Promise<boolean>;
+  register: (email: string, password: string, organizationId?: string, fullName?: string) => Promise<boolean>;
   logout: () => Promise<void>;
   authFetch: (url: string, init?: RequestInit) => Promise<Response>;
 }
@@ -112,7 +113,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const register = async (email: string, password: string, organizationId?: string): Promise<boolean> => {
+  const register = async (
+    email: string,
+    password: string,
+    organizationId?: string,
+    fullName?: string
+  ): Promise<boolean> => {
     setError(null);
     try {
       const res = await fetch('http://localhost:3000/api/auth/register', {
@@ -122,6 +128,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           email,
           password,
           organizationId: organizationId?.trim() ? organizationId.trim() : undefined,
+          fullName: fullName?.trim() ? fullName.trim() : undefined,
         }),
       });
 
