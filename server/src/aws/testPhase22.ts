@@ -156,7 +156,7 @@ async function runPhase22TestSuite() {
   console.log(`Total Tests: ${totalTests}`);
   console.log(`Passed:      ${passedTests}`);
   console.log(`Failed:      ${totalTests - passedTests}`);
-  console.log("=======================================================\n");
+  process.exit(totalTests - passedTests === 0 ? 0 : 1);
 }
 
 runPhase22TestSuite().catch((err) => {

@@ -1,0 +1,25 @@
+{
+  "name": "ai-workforce-platform-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Enterprise-Grade Governed AI Workforce Platform Monorepo Root",
+  "scripts": {
+    "build:server": "npm --prefix server run build",
+    "build:client": "npm --prefix client run build",
+    "build": "npm run build:server && npm run build:client",
+    "lint": "npm --prefix client run lint",
+    "typecheck:server": "tsc -p server/tsconfig.json --noEmit",
+    "typecheck:client": "tsc -p client/tsconfig.json --noEmit",
+    "typecheck": "npm run typecheck:server && npm run typecheck:client",
+    "test:phase23": "npm --prefix server run test:phase23",
+    "test:phase22": "npm --prefix server run test:phase22",
+    "test:phase21": "npm --prefix server run test:phase21",
+    "test:phase19": "npm --prefix server run test:phase19",
+    "test:phase18": "npm --prefix server run test:phase18",
+    "test:phase17": "npm --prefix server run test:phase17",
+    "test:phase16": "npm --prefix server run test:phase16",
+    "test:phase15": "npm --prefix server run test:phase15",
+    "test:phase14": "npm --prefix server run test:phase14",
+    "test:phase13": "npm --prefix server run test:phase13"
+  }
+}

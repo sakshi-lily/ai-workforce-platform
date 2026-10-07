@@ -3,11 +3,13 @@ import { checkDatabaseHealth } from "../db/pool";
 import { checkRedisHealth } from "../cache/redis";
 import { config } from "../config/env";
 
+import { releaseManager } from "../cicd/releaseManager";
+
 export const healthRouter = Router();
 
-// Basic process health check
+// Basic process health check with build metadata
 healthRouter.get("/", (_req: Request, res: Response) => {
-  res.status(200).json({ status: "ok" });
+  res.status(200).json(releaseManager.getPublicHealthMetadata());
 });
 
 // Database connectivity health check
