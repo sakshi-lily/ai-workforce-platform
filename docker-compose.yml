@@ -1,0 +1,198 @@
+# ==============================================================================
+# AI Workforce Platform — Production-Like Local Environment
+# Phase 21: Full Service Orchestration (Client, API, Worker, MySQL, Redis, Qdrant)
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. MySQL Relational Database (Persistent Storage)
+  # ----------------------------------------------------------------------------
+  mysql:
+    image: mysql:8.4
+    container_name: ai-workforce-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: ai_workforce
+      MYSQL_USER: workforce_user
+      MYSQL_PASSWORD: workforce_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    ports:
+      - "3306:3306"
+    networks:
+      - workforce-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u $$MYSQL_USER -p$$MYSQL_PASSWORD || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+  # ----------------------------------------------------------------------------
+  # 2. Redis Cache & Job Queue (Durable Queue Persistence via AOF)
+  # ----------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: ai-workforce-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - workforce-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ----------------------------------------------------------------------------
+  # 3. Qdrant Vector Search Engine (Knowledge Retrieval & RAG)
+  # ----------------------------------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:v1.13.0
+    container_name: ai-workforce-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      - "6333:6333"
+    networks:
+      - workforce-network
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 3 bash -c '</dev/tcp/localhost/6333' 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ----------------------------------------------------------------------------
+  # 4. Backend Express API (Compiled TypeScript Runtime)
+  # ----------------------------------------------------------------------------
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: ai-workforce-api
+    restart: on-failure:5
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: workforce_user
+      DB_PASSWORD: workforce_password
+      DB_NAME: ai_workforce
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      QDRANT_URL: http://qdrant:6333
+      JWT_SECRET: ${JWT_SECRET:-ai_workforce_production_jwt_secret_key_2026}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      SERPAPI_API_KEY: ${SERPAPI_API_KEY:-}
+      GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
+      GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
+      GMAIL_REDIRECT_URI: ${GMAIL_REDIRECT_URI:-http://localhost:3000/api/integrations/gmail/callback}
+    ports:
+      - "3000:3000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - workforce-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ----------------------------------------------------------------------------
+  # 5. Background Asynchronous Worker (Durable Autonomous Task Processing)
+  # ----------------------------------------------------------------------------
+  worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: ai-workforce-worker
+    command: ["node", "dist/jobs/workerRunner.js"]
+    restart: on-failure:5
+    environment:
+      NODE_ENV: production
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: workforce_user
+      DB_PASSWORD: workforce_password
+      DB_NAME: ai_workforce
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      QDRANT_URL: http://qdrant:6333
+      JWT_SECRET: ${JWT_SECRET:-ai_workforce_production_jwt_secret_key_2026}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      SERPAPI_API_KEY: ${SERPAPI_API_KEY:-}
+      GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID:-}
+      GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET:-}
+      WORKER_CONCURRENCY: 2
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - workforce-network
+
+  # ----------------------------------------------------------------------------
+  # 6. React Frontend Client (Production Nginx Web Server + API Reverse Proxy)
+  # ----------------------------------------------------------------------------
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: ai-workforce-client
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "5173:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - workforce-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+# ------------------------------------------------------------------------------
+# Persistent Volume Strategy
+# ------------------------------------------------------------------------------
+volumes:
+  mysql_data:
+    name: ai-workforce-mysql-data
+  redis_data:
+    name: ai-workforce-redis-data
+  qdrant_data:
+    name: ai-workforce-qdrant-data
+
+# ------------------------------------------------------------------------------
+# Isolated Internal Network
+# ------------------------------------------------------------------------------
+networks:
+  workforce-network:
+    name: ai-workforce-network
+    driver: bridge

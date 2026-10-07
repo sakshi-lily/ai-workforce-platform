@@ -14,6 +14,7 @@
     "test:phase17": "tsx src/approvals/testPhase17.ts",
     "test:phase18": "tsx src/jobs/testPhase18.ts",
     "test:phase19": "tsx src/reliability/testPhase19.ts",
+    "test:phase21": "tsx src/docker/testPhase21.ts",
     "worker": "tsx src/jobs/workerRunner.ts"
   },
   "dependencies": {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext';
+import { getApiUrl } from '../config/api';
 
 export interface RegisteredTool {
   name: string;
@@ -30,7 +31,7 @@ export const AgentPage: React.FC = () => {
   useEffect(() => {
     const fetchTools = async () => {
       try {
-        const res = await fetch('http://localhost:3000/api/agent/tools');
+        const res = await fetch(getApiUrl('/api/agent/tools'));
         if (res.ok) {
           const json = await res.json();
           setRegisteredTools(json.tools || []);

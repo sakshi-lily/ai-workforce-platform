@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { Link } from '../router/Router';
+import { getApiUrl } from '../config/api';
 
 interface HealthStatus {
   service: string;
@@ -28,7 +29,7 @@ export const DashboardPage: React.FC = () => {
       // 1. Backend Express
       try {
         const start = performance.now();
-        const res = await fetch('http://localhost:3000/api/health');
+        const res = await fetch(getApiUrl('/api/health'));
         const lat = Math.round(performance.now() - start);
         updateHealth('Express Gateway', res.ok ? 'ONLINE' : 'OFFLINE', lat, 'Port 3000');
       } catch {
@@ -38,7 +39,7 @@ export const DashboardPage: React.FC = () => {
       // 2. MySQL
       try {
         const start = performance.now();
-        const res = await fetch('http://localhost:3000/api/health/db');
+        const res = await fetch(getApiUrl('/api/health/db'));
         const lat = Math.round(performance.now() - start);
         const data = await res.json();
         updateHealth('MySQL 8.4 Database', res.ok ? 'ONLINE' : 'OFFLINE', lat, data.databaseName || 'ai_workforce');
@@ -49,7 +50,7 @@ export const DashboardPage: React.FC = () => {
       // 3. Redis
       try {
         const start = performance.now();
-        const res = await fetch('http://localhost:3000/api/health/redis');
+        const res = await fetch(getApiUrl('/api/health/redis'));
         const lat = Math.round(performance.now() - start);
         updateHealth('Redis 8.10 Cache', res.ok ? 'ONLINE' : 'OFFLINE', lat, 'Port 6379');
       } catch {
@@ -59,7 +60,7 @@ export const DashboardPage: React.FC = () => {
       // 4. Qdrant
       try {
         const start = performance.now();
-        const res = await fetch('http://localhost:3000/api/health/qdrant');
+        const res = await fetch(getApiUrl('/api/health/qdrant'));
         const lat = Math.round(performance.now() - start);
         const data = await res.json();
         updateHealth('Qdrant 1.13 Vector', res.ok ? 'ONLINE' : 'OFFLINE', lat, data.collection || 'Default');
@@ -70,7 +71,7 @@ export const DashboardPage: React.FC = () => {
       // 5. AI LLM
       try {
         const start = performance.now();
-        const res = await fetch('http://localhost:3000/api/ai/health');
+        const res = await fetch(getApiUrl('/api/ai/health'));
         const lat = Math.round(performance.now() - start);
         const data = await res.json();
         updateHealth('AI Foundation Model', res.ok ? 'ONLINE' : 'OFFLINE', lat, data.model || 'OpenAI / Simulation');

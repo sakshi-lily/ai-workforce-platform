@@ -1,0 +1,4 @@
+# Compose specification alias (symlink alternative) pointing to docker-compose.yml
+# Allows both `docker compose` and `docker-compose` CLI commands
+include:
+  - docker-compose.yml

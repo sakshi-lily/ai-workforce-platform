@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext';
+import { getApiUrl } from '../config/api';
 
 export interface Customer {
   id: string;
@@ -279,7 +280,7 @@ export const IntegrationsPage: React.FC = () => {
                   {gmailLoading ? 'Connecting...' : 'Connect Gmail (Sandbox / Mock)'}
                 </button>
                 <a
-                  href="http://localhost:3000/api/integrations/gmail/connect"
+                  href={getApiUrl('/api/integrations/gmail/connect')}
                   className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium font-sans border border-slate-700 transition"
                   target="_blank"
                   rel="noreferrer"

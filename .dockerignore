@@ -1,0 +1,28 @@
+# Git
+.git/
+.gitignore
+
+# Secrets & Environment Files
+.env
+.env.*
+*.env
+*.pem
+*.key
+
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Build artifacts
+dist/
+*/dist/
+build/
+*/build/
+coverage/
+
+# Logs & temp
+logs/
+*.log
+tmp/
+temp/
+.gemini/

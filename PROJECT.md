@@ -1,23 +1,25 @@
 # AI Workforce Platform
 
-## Current Status: Phase 19 — Reliability, Recovery & Resilient Execution (COMPLETED ✅)
+## Current Status: Phase 21 — Docker, Containerization & Production-Like Local Environment (COMPLETED ✅)
 
 ### Project Status
 
-**Current Phase:** Phase 19 — Reliability, Recovery & Resilient Execution  
-**Stage:** Phase 19 Completed & Verified (155+ Tests Passing)  
+**Current Phase:** Phase 21 — Docker, Containerization & Production-Like Local Environment  
+**Stage:** Phase 21 Completed & Verified (Multi-Stage Docker, Compose Orchestration, 219+ Tests Passing)  
 **Developer:** Sakshi
 
-### Phase 19 Deliverables Summary (Reliability, Recovery & Resilient Execution)
-- [x] **Failure Taxonomy & Error Normalization:** Strongly typed taxonomy (`TRANSIENT_NETWORK`, `RATE_LIMIT`, `PROVIDER_TIMEOUT`, `UNKNOWN_OUTCOME`, etc.) with sanitized user-facing messages stripping internal infrastructure details.
-- [x] **Retry Policy & Jittered Backoff:** Full jitter exponential backoff with cross-layer retry budget ceiling (`total_retries` capped at 5) preventing retry explosion.
-- [x] **Provider-Level Circuit Breakers:** Independent circuit breakers per external provider (`openai`, `gmail`, `qdrant`, `serpapi`, `mysql`, `redis`) with `CLOSED` -> `OPEN` -> `HALF_OPEN` -> `CLOSED` state lifecycle.
-- [x] **Hierarchical Timeout Architecture:** Explicit timeout budgets for tools (30s), LLM (45s), jobs (120s), and tasks (300s) with `ExecutionDeadline` propagating remaining budgets.
-- [x] **Checkpointing & Partial Progress:** Resumes partially finished execution plans from the earliest uncompleted step using persisted MySQL step observations without re-executing completed work.
-- [x] **Stale Task Sweeper & Optimistic Concurrency:** Recovers orphaned `RUNNING` tasks whose worker lease expired, using atomic `tasks.version` checks to prevent race conditions.
-- [x] **External Side-Effect Safeguards:** Post-dispatch timeouts on external actions (e.g., `gmail_send`) marked `UNKNOWN_OUTCOME`; automated blind retries prohibited.
-- [x] **Attempt Traceability & Manual Recovery:** `job_attempts` table records full audit history; `POST /api/tasks/:taskId/retry` allows tenant-isolated manual retries for failed tasks.
-- [x] **Comprehensive Verification:** 17/17 tests passed in `testPhase19.ts`. 155+ tests passing across all platform test suites (Phases 13–19) with 0 regressions. Documented in `docs/PHASE_19.md`.
+### Phase 21 Deliverables Summary (Docker & Containerization)
+- [x] **Multi-Stage Backend Dockerfile:** Alpine-based build and minimal runtime stages for Express API and Worker, enforcing unprivileged `USER node` security and zero build tool bloat in `server/Dockerfile`.
+- [x] **Multi-Stage Frontend Dockerfile:** Production Nginx web server container serving optimized React SPA bundle with SPA fallback and `/healthz` check in `client/Dockerfile`.
+- [x] **Nginx API Reverse Proxy:** In-container reverse proxy transparently forwarding `/api/*` to `http://api:3000/api/`, eliminating CORS and resolving browser vs Docker networking discrepancies in `client/nginx.conf`.
+- [x] **Standalone Worker Container:** Reuses backend image with explicit `node dist/jobs/workerRunner.js` entrypoint, running headless without exposed HTTP ports.
+- [x] **Docker Compose Orchestration:** Full orchestration of 6 services (`client`, `api`, `worker`, `mysql`, `redis`, `qdrant`) with dependency ordering (`condition: service_healthy`) in `docker-compose.yml` and `compose.yaml`.
+- [x] **Persistent Volume Strategy:** Named volumes (`mysql_data`, `redis_data`, `qdrant_data`) ensure zero data loss during normal container restarts; Redis configured with Append-Only File (`--appendonly yes`) durability.
+- [x] **Build Context Security:** Multi-tier `.dockerignore` files prevent `.env`, `.git`, credentials, and local `node_modules` from entering image contexts.
+- [x] **Unified Database Initialization:** Complete SQL bootstrap schema (`docker/mysql/init.sql`) defining all 12 tables and initial demo seeds.
+- [x] **Typed Environment Configuration:** Dynamic host resolution and Zod schema validation in `server/src/config/env.ts`.
+- [x] **Graceful Shutdown:** Container termination signals (`SIGINT`/`SIGTERM`) cleanly drain HTTP connections, release Redis locks, and close MySQL pools.
+- [x] **Comprehensive Verification:** 64/64 tests passed in `testPhase21.ts`. 219+ tests passing across all platform suites with 0 regressions. Documented in `docs/DOCKER.md`.
 
 ---
 

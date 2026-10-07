@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { getApiUrl, API_BASE_URL } from '../config/api';
 
 export interface AuthUser {
   id: string;
@@ -48,7 +49,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       try {
         setAuthState('CHECKING');
-        const res = await fetch('http://localhost:3000/api/auth/me', {
+        const res = await fetch(getApiUrl('/api/auth/me'), {
           headers: {
             Authorization: `Bearer ${storedToken}`,
           },
@@ -89,7 +90,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const login = async (email: string, password: string): Promise<boolean> => {
     setError(null);
     try {
-      const res = await fetch('http://localhost:3000/api/auth/login', {
+      const res = await fetch(getApiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -121,7 +122,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   ): Promise<boolean> => {
     setError(null);
     try {
-      const res = await fetch('http://localhost:3000/api/auth/register', {
+      const res = await fetch(getApiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -154,7 +155,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const currentToken = token || localStorage.getItem(TOKEN_KEY);
       if (currentToken) {
-        await fetch('http://localhost:3000/api/auth/logout', {
+        await fetch(getApiUrl('/api/auth/logout'), {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${currentToken}`,
@@ -180,7 +181,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         headers.set('Authorization', `Bearer ${currentToken}`);
       }
 
-      const response = await fetch(url, {
+      // Automatically normalize hardcoded http://localhost:3000 to production proxy base
+      const normalizedUrl = url.startsWith('http://localhost:3000')
+        ? url.replace('http://localhost:3000', API_BASE_URL)
+        : url;
+
+      const response = await fetch(normalizedUrl, {
         ...init,
         headers,
       });
