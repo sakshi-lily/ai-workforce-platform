@@ -200,3 +200,25 @@ Operational registry tracking active background worker processes, heartbeats, an
 - `started_at` (TIMESTAMP): Worker startup timestamp.
 - Indexes: `(status, last_heartbeat)`.
 
+### 2.12 `job_attempts` (Phase 19)
+Historical audit and diagnostics record of every individual execution attempt for background jobs and tasks.
+- `id` (VARCHAR 64 PK): Unique attempt identifier (`att_...`).
+- `job_id` (VARCHAR 64 FK): Linked job ID.
+- `task_id` (VARCHAR 36 FK): Linked parent task ID.
+- `organization_id` (VARCHAR 64): Authoritative tenant ID for strict query isolation.
+- `attempt_number` (INT): 1-indexed attempt number.
+- `worker_id` (VARCHAR 64 NULL): Identity of worker executing the attempt.
+- `status` (ENUM 'RUNNING', 'COMPLETED', 'FAILED'): Attempt lifecycle status.
+- `error_code` (VARCHAR 64 NULL): Normalized error code (e.g., `TIMEOUT`, `RATE_LIMIT`).
+- `error_category` (VARCHAR 64 NULL): Categorized taxonomy (e.g., `TRANSIENT_NETWORK`, `PROVIDER_TIMEOUT`).
+- `error_details` (TEXT NULL): Sanitized error message.
+- `started_at` (TIMESTAMP): Execution attempt start time.
+- `ended_at` (TIMESTAMP NULL): Execution attempt completion/failure time.
+- `duration_ms` (INT NULL): Elapsed execution duration in milliseconds.
+- Indexes: `(task_id, attempt_number)`, `(job_id, attempt_number)`, `(organization_id, created_at)`.
+
+### 2.13 `tasks` Concurrency & Retry Fields (Phase 19)
+- `version` (INT NOT NULL DEFAULT 1): Optimistic concurrency version counter. Incremented on every atomic state transition.
+- `total_retries` (INT NOT NULL DEFAULT 0): Cross-layer cumulative retry counter protecting against retry multiplication.
+
+

@@ -43,6 +43,8 @@ import { AgentWatchdog, WatchdogTrippedError } from "./agentWatchdog";
 import { AgentPlanner } from "./agentPlanner";
 import { AgentDecisionEngine } from "./agentDecision";
 import { AgentResultSynthesizer } from "./agentResult";
+import { checkpointManager } from "../reliability/checkpointManager";
+import { circuitBreaker } from "../reliability/circuitBreaker";
 
 export interface AgentRuntimeOptions {
   mode?: "tools" | "planning";
@@ -245,28 +247,41 @@ export class AgentRuntime {
       // =====================================================================
       // PHASE A: Structured Plan Generation & DAG Validation
       // =====================================================================
-      logState("LLM_CALL", "Generating structured Directed Acyclic Graph (DAG) execution plan.");
       let plan: AdvancedAgentPlan;
+      const checkpoint = await checkpointManager.loadCheckpoint(taskId);
 
-      if (options.initialPlan) {
-        plan = options.initialPlan;
-        assertValidPlanDAG(plan);
+      if (checkpoint?.resumablePlan && checkpoint.completedStepCount > 0) {
+        logState(
+          "VALIDATING",
+          `Restored partial progress checkpoint with ${checkpoint.completedStepCount}/${checkpoint.totalSteps} steps completed.`
+        );
+        plan = checkpoint.resumablePlan;
+        for (const step of plan.steps) {
+          stepDbIdMap.set(step.id, step.id);
+        }
       } else {
-        plan = await AgentPlanner.generatePlan(taskRecord.prompt, options.allowedTools);
+        logState("LLM_CALL", "Generating structured Directed Acyclic Graph (DAG) execution plan.");
+
+        if (options.initialPlan) {
+          plan = options.initialPlan;
+          assertValidPlanDAG(plan);
+        } else {
+          plan = await AgentPlanner.generatePlan(taskRecord.prompt, options.allowedTools);
+        }
+
+        logState("VALIDATING", `Plan validated as acyclic DAG with ${plan.steps.length} sequential steps.`);
+
+        // Persist plan steps in MySQL
+        for (const step of plan.steps) {
+          const dbId = await this.persistStepToDatabase(taskId, step);
+          stepDbIdMap.set(step.id, dbId);
+        }
+
+        await this.recordAudit(context, "TASK_PLAN_GENERATED", "PLAN_CREATED", {
+          stepCount: plan.steps.length,
+          summary: plan.summary,
+        });
       }
-
-      logState("VALIDATING", `Plan validated as acyclic DAG with ${plan.steps.length} sequential steps.`);
-
-      // Persist plan steps in MySQL
-      for (const step of plan.steps) {
-        const dbId = await this.persistStepToDatabase(taskId, step);
-        stepDbIdMap.set(step.id, dbId);
-      }
-
-      await this.recordAudit(context, "TASK_PLAN_GENERATED", "PLAN_CREATED", {
-        stepCount: plan.steps.length,
-        summary: plan.summary,
-      });
 
       // =====================================================================
       // PHASE B: Deterministic Step Execution Loop

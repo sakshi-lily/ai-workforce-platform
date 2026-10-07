@@ -10,6 +10,7 @@ import { taskRouter } from "./tasks/taskRoutes";
 import { gmailRouter } from "./integrations/gmail/gmailRoutes";
 import { approvalRouter } from "./approvals/approvalRoutes";
 import { workerRouter } from "./jobs/workerRoutes";
+import { reliabilityRouter } from "./reliability/reliabilityRoutes";
 
 export const app = express();
 
@@ -25,6 +26,7 @@ app.use(
 app.use(express.json());
 
 // Mount routers
+app.use("/api", reliabilityRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/health", healthRouter);
 app.use("/api/customers", customerRouter);

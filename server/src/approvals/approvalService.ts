@@ -472,13 +472,27 @@ export class ApprovalService {
       return executionResult;
     } catch (err: any) {
       isError = true;
-      errorMessage = err.message || String(err);
+      errorMessage = err?.message || String(err);
 
-      // Revert status or log failed execution
-      await pool.query(
-        `UPDATE approvals SET status = 'APPROVED', decision_note = CONCAT(IFNULL(decision_note, ''), ' [Execution Error: ', ?, ']') WHERE id = ?`,
-        [errorMessage, approvalId]
-      );
+      const errStr = String(errorMessage || "");
+      const isAmbiguousTimeout =
+        errStr.includes("timeout") ||
+        errStr.includes("ETIMEDOUT") ||
+        err?.code === "TIMEOUT" ||
+        err?.code === "GMAIL_TIMEOUT";
+
+      if (isAmbiguousTimeout) {
+        // Safe ambiguous handling: Automated blind retry PROHIBITED to prevent duplicate emails
+        await pool.query(
+          `UPDATE approvals SET status = 'PENDING', decision_note = CONCAT(IFNULL(decision_note, ''), ' [UNKNOWN_OUTCOME: Provider timed out after dispatch. Automated blind retry blocked to prevent duplicate email send.]') WHERE id = ?`,
+          [approvalId]
+        );
+      } else {
+        await pool.query(
+          `UPDATE approvals SET status = 'APPROVED', decision_note = CONCAT(IFNULL(decision_note, ''), ' [Execution Error: ', ?, ']') WHERE id = ?`,
+          [errorMessage, approvalId]
+        );
+      }
 
       await this.logAuditEvent({
         userId: user.id,

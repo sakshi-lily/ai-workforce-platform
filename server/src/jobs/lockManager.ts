@@ -125,6 +125,23 @@ export class LockManager {
       return null;
     }
   }
+
+  /**
+   * Unconditionally releases an execution lock (used by crash recovery sweepers).
+   */
+  public async forceReleaseLock(taskId: string): Promise<boolean> {
+    const client = await initRedis();
+    if (!client) return true;
+
+    try {
+      const key = this.lockKey(taskId);
+      await client.del(key);
+      return true;
+    } catch (err) {
+      console.warn("[LockManager Force Release Error]", err);
+      return false;
+    }
+  }
 }
 
 export const lockManager = LockManager.getInstance();

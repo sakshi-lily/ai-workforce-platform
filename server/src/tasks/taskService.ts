@@ -456,6 +456,13 @@ export class TaskService {
 
     assertValidTaskTransition(task.status, "QUEUED");
 
+    await pool.query(
+      `UPDATE tasks 
+       SET status = 'QUEUED', version = version + 1, updated_at = NOW() 
+       WHERE id = ?;`,
+      [taskId]
+    );
+
     const { jobQueue } = await import("../jobs/queue");
     const job = await jobQueue.enqueue({
       taskId,
@@ -546,6 +553,29 @@ export class TaskService {
 
       throw err;
     }
+  }
+
+  /**
+   * Phase 19: Atomically updates task state with optimistic concurrency version check.
+   * Returns true if update succeeded, false if version was modified concurrently.
+   */
+  public async updateTaskStateAtomic(
+    taskId: string,
+    expectedVersion: number,
+    newState: TaskLifecycleState,
+    errorMessage?: string
+  ): Promise<boolean> {
+    const [result] = await pool.query<any>(
+      `UPDATE tasks 
+       SET status = ?, 
+           version = version + 1, 
+           error_message = IFNULL(?, error_message),
+           updated_at = NOW() 
+       WHERE id = ? AND version = ?;`,
+      [newState, errorMessage || null, taskId, expectedVersion]
+    );
+
+    return result.affectedRows > 0;
   }
 }
 

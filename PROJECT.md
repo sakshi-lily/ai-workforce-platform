@@ -1,24 +1,23 @@
 # AI Workforce Platform
 
-## Current Status: Phase 18 — Background Workers & Durable Asynchronous Execution (COMPLETED ✅)
+## Current Status: Phase 19 — Reliability, Recovery & Resilient Execution (COMPLETED ✅)
 
 ### Project Status
 
-**Current Phase:** Phase 18 — Background Workers & Durable Asynchronous Execution  
-**Stage:** Phase 18 Completed & Verified (Ready for Phase 19: Reliability)  
+**Current Phase:** Phase 19 — Reliability, Recovery & Resilient Execution  
+**Stage:** Phase 19 Completed & Verified (155+ Tests Passing)  
 **Developer:** Sakshi
 
-### Phase 18 Deliverables Summary (Background Workers & Asynchronous Execution)
-- [x] **Redis-Backed Job Queue:** Implemented priority-based job queue with ZSET scoring, delayed retry scheduling, and active execution tracking in `server/src/jobs/queue.ts`.
-- [x] **Distributed Execution Lock Manager:** Anti-collision locking (`SET NX EX`) with periodic Lua heartbeat renewal and safe atomic owner-verified release preventing duplicate task runs.
-- [x] **Asynchronous HTTP 202 Lifecycle:** `POST /api/tasks/:taskId/run` accepts work, updates state to `QUEUED`, and returns `HTTP 202 Accepted` immediately, decoupling execution from HTTP connections.
-- [x] **Authoritative Worker Authorization:** Background workers load context from MySQL and verify tenant organization boundaries; untrusted queue parameters cannot spoof permissions.
-- [x] **Minimal Queue Payloads:** Payloads contain strictly task identity and execution options; zero credentials, OAuth tokens, or sensitive context in queue messages.
-- [x] **Bounded Retries with Backoff & Jitter:** Transient errors trigger exponential backoff with random jitter; non-retryable errors or exhausted retries fail gracefully to terminal `FAILED`.
-- [x] **Phase 17 Approval Integration:** Clean worker pause on `WAITING_FOR_APPROVAL` with lock release; automatic `TASK_RESUME` background job submission upon human approval.
-- [x] **Worker Observability & Health:** `GET /api/health/worker` and `/api/jobs` endpoints providing live worker heartbeats, concurrency, and queue telemetry.
-- [x] **Standalone Worker Process:** `npm run worker` script allows executing workers in dedicated worker processes with graceful shutdown (`SIGINT`/`SIGTERM`).
-- [x] **Comprehensive Verification:** 13/13 tests passed in `testPhase18.ts`. 138/138 tests passed across all platform test suites (Phases 13–18). Documented in `PHASE_18.md`.
+### Phase 19 Deliverables Summary (Reliability, Recovery & Resilient Execution)
+- [x] **Failure Taxonomy & Error Normalization:** Strongly typed taxonomy (`TRANSIENT_NETWORK`, `RATE_LIMIT`, `PROVIDER_TIMEOUT`, `UNKNOWN_OUTCOME`, etc.) with sanitized user-facing messages stripping internal infrastructure details.
+- [x] **Retry Policy & Jittered Backoff:** Full jitter exponential backoff with cross-layer retry budget ceiling (`total_retries` capped at 5) preventing retry explosion.
+- [x] **Provider-Level Circuit Breakers:** Independent circuit breakers per external provider (`openai`, `gmail`, `qdrant`, `serpapi`, `mysql`, `redis`) with `CLOSED` -> `OPEN` -> `HALF_OPEN` -> `CLOSED` state lifecycle.
+- [x] **Hierarchical Timeout Architecture:** Explicit timeout budgets for tools (30s), LLM (45s), jobs (120s), and tasks (300s) with `ExecutionDeadline` propagating remaining budgets.
+- [x] **Checkpointing & Partial Progress:** Resumes partially finished execution plans from the earliest uncompleted step using persisted MySQL step observations without re-executing completed work.
+- [x] **Stale Task Sweeper & Optimistic Concurrency:** Recovers orphaned `RUNNING` tasks whose worker lease expired, using atomic `tasks.version` checks to prevent race conditions.
+- [x] **External Side-Effect Safeguards:** Post-dispatch timeouts on external actions (e.g., `gmail_send`) marked `UNKNOWN_OUTCOME`; automated blind retries prohibited.
+- [x] **Attempt Traceability & Manual Recovery:** `job_attempts` table records full audit history; `POST /api/tasks/:taskId/retry` allows tenant-isolated manual retries for failed tasks.
+- [x] **Comprehensive Verification:** 17/17 tests passed in `testPhase19.ts`. 155+ tests passing across all platform test suites (Phases 13–19) with 0 regressions. Documented in `docs/PHASE_19.md`.
 
 ---
 

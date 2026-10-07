@@ -59,7 +59,7 @@ export async function runSuite() {
   // Initialize test dependencies and clear test queue keys
   const redis = await initRedis();
   if (redis) {
-    await redis.del("queue:jobs:pending", "queue:jobs:delayed", "queue:jobs:active");
+    await redis.del(["queue:jobs:pending", "queue:jobs:delayed", "queue:jobs:active"]);
   }
 
   // Seed two distinct test tenants

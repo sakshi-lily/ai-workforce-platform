@@ -182,11 +182,30 @@ export class BackgroundWorker {
       taskId: String(task.id),
     };
 
+    const attemptId = `att_${crypto.randomUUID().replace(/-/g, "")}`;
+    const attemptNumber = job.attempts + 1;
+
     try {
       // 3. Update task status to RUNNING if it was QUEUED or REQUESTED
       await pool.query(
         `UPDATE tasks SET status = 'RUNNING', started_at = IFNULL(started_at, NOW()), updated_at = NOW() WHERE id = ?;`,
         [taskId]
+      );
+
+      // Record running attempt in job_attempts
+      await pool.query(
+        `INSERT INTO job_attempts (
+          id, job_id, task_id, organization_id, attempt_number, worker_id,
+          status, started_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'RUNNING', NOW());`,
+        [
+          attemptId,
+          job.id,
+          taskId,
+          task.organization_id,
+          attemptNumber,
+          this.workerId,
+        ]
       );
 
       // 4. Invoke Agent Runtime
@@ -202,17 +221,38 @@ export class BackgroundWorker {
       if (runResult.status === "WAITING_FOR_APPROVAL") {
         // Paused at approval boundary (Section 36 & 88)
         console.log(`[BackgroundWorker] Task '${taskId}' paused at WAITING_FOR_APPROVAL. Releasing lock and completing execution iteration.`);
+        await pool.query(
+          `UPDATE job_attempts SET status = 'COMPLETED', ended_at = NOW() WHERE id = ?;`,
+          [attemptId]
+        );
         await jobQueue.complete(job.id);
-        // Lock released below so resume job can pick it up when human approves
       } else if (runResult.status === "CANCELLED") {
         console.log(`[BackgroundWorker] Task '${taskId}' was cancelled. Marking job complete.`);
+        await pool.query(
+          `UPDATE job_attempts SET status = 'COMPLETED', ended_at = NOW() WHERE id = ?;`,
+          [attemptId]
+        );
         await jobQueue.complete(job.id);
       } else {
         // Task completed successfully
+        await pool.query(
+          `UPDATE job_attempts SET status = 'COMPLETED', ended_at = NOW() WHERE id = ?;`,
+          [attemptId]
+        );
         await jobQueue.complete(job.id);
       }
     } catch (err: any) {
       console.error(`[BackgroundWorker] Error processing job '${job.id}' for task '${taskId}':`, err);
+      // Update attempt as FAILED
+      await pool.query(
+        `UPDATE job_attempts 
+         SET status = 'FAILED', 
+             error_code = ?, 
+             error_details = ?, 
+             ended_at = NOW() 
+         WHERE id = ?;`,
+        [err?.code || "WORKER_EXECUTION_ERROR", JSON.stringify({ message: err?.message }), attemptId]
+      );
       // Fail with retry capability
       await jobQueue.fail(job.id, err, true);
     } finally {

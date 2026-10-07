@@ -18,6 +18,8 @@ import {
   JOB_CONFIG,
   QueueMetrics,
 } from "./jobTypes";
+import { retryPolicy } from "../reliability/retryPolicy";
+import { normalizeError } from "../reliability/failureTaxonomy";
 
 export class JobQueue {
   private static instance: JobQueue;
@@ -261,13 +263,44 @@ export class JobQueue {
       attempt: job.attempts,
     };
 
+    const normalized = normalizeError(error);
+    const isPolicyRetryable = retryPolicy.isRetryable(normalized);
+    const canRetry =
+      retryable &&
+      isPolicyRetryable &&
+      retryPolicy.canRetry({
+        currentAttempt: job.attempts,
+        maxAttempts: job.max_attempts,
+      });
+
+    // Record attempt entry in job_attempts
+    try {
+      const attemptId = `att_${crypto.randomUUID().replace(/-/g, "")}`;
+      await pool.query(
+        `INSERT INTO job_attempts (
+          id, job_id, task_id, organization_id, attempt_number, worker_id,
+          status, error_code, error_category, error_details, started_at, ended_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW());`,
+        [
+          attemptId,
+          jobId,
+          job.task_id,
+          job.organization_id,
+          job.attempts,
+          job.worker_id || "worker",
+          canRetry ? "RETRYING" : "EXHAUSTED",
+          normalized.code,
+          normalized.category,
+          JSON.stringify(safeError),
+        ]
+      );
+    } catch (attemptErr) {
+      console.warn("[JobQueue Attempt Record Warning]", attemptErr);
+    }
+
     // Determine if we can retry
-    if (retryable && job.attempts < job.max_attempts) {
-      // Exponential backoff with jitter: base * 2^(attempt-1) + jitter
-      const exponential = JOB_CONFIG.BASE_BACKOFF_MS * Math.pow(2, job.attempts - 1);
-      const backoff = Math.min(exponential, JOB_CONFIG.MAX_BACKOFF_MS);
-      const jitter = Math.floor(Math.random() * JOB_CONFIG.JITTER_MAX_MS);
-      const delayMs = backoff + jitter;
+    if (canRetry) {
+      const delayMs = retryPolicy.getBackoffDelay(job.attempts);
       const availableAt = Date.now() + delayMs;
 
       // Add to Redis delayed queue
