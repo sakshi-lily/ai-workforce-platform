@@ -14,10 +14,12 @@ import { reliabilityRouter } from "./reliability/reliabilityRoutes";
 
 export const app = express();
 
-// Enable CORS for the React development client
+// Enable CORS (configurable via CORS_ORIGIN in production)
+const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",").map((o) => o.trim()) : ["http://localhost:5173", "http://127.0.0.1:5173"];
+
 app.use(
   cors({
-    origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
+    origin: allowedOrigins,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Execution-Mode"],
   })

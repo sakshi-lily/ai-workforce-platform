@@ -38,9 +38,7 @@ gmailRouter.get("/connect", requireAuth, async (req: Request, res: Response) => 
   try {
     const state = gmailService.generateOAuthState(req.userId!, req.organizationId!);
     const clientId = process.env.GOOGLE_CLIENT_ID;
-    const redirectUri =
-      process.env.GOOGLE_REDIRECT_URI ||
-      "http://localhost:3000/api/integrations/gmail/callback";
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI || process.env.GMAIL_REDIRECT_URI || "http://localhost:3000/api/integrations/gmail/callback";
 
     if (!clientId) {
       res.json({

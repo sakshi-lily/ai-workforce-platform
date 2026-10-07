@@ -125,3 +125,38 @@ healthRouter.get("/worker", async (_req: Request, res: Response) => {
     });
   }
 });
+
+// Phase 22: AWS ECS / ALB Liveness Probe
+healthRouter.get("/liveness", (_req: Request, res: Response) => {
+  res.status(200).json({
+    status: "alive",
+    uptimeSeconds: Math.floor(process.uptime()),
+    memoryUsageMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Phase 22: AWS ECS / ALB Readiness Probe (Verifies essential dependencies)
+healthRouter.get("/readiness", async (_req: Request, res: Response) => {
+  try {
+    const dbHealth = await checkDatabaseHealth();
+    const redisHealth = await checkRedisHealth();
+
+    const isReady = dbHealth.connected; // MySQL is mandatory for readiness
+    const statusCode = isReady ? 200 : 503;
+
+    res.status(statusCode).json({
+      status: isReady ? "ready" : "not_ready",
+      database: dbHealth.connected ? "connected" : "disconnected",
+      redis: redisHealth.connected ? "connected" : "degraded",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(503).json({
+      status: "not_ready",
+      error: err.message || "Readiness check failure",
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
