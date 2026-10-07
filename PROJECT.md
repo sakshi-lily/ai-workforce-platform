@@ -1,23 +1,24 @@
 # AI Workforce Platform
 
-## Current Status: Phase 16 — Gmail Automation (COMPLETED ✅)
+## Current Status: Phase 17 — Human Approval & Controlled External Actions (COMPLETED ✅)
 
 ### Project Status
 
-**Current Phase:** Phase 16 — Gmail Automation  
-**Stage:** Phase 16 Completed & Verified (Ready for Phase 17: Human Approval)  
+**Current Phase:** Phase 17 — Human Approval & Controlled External Actions  
+**Stage:** Phase 17 Completed & Verified (Ready for Phase 18: Background Workers)  
 **Developer:** Sakshi
 
-### Phase 16 Deliverables Summary (Gmail Automation)
-- [x] **Clear Risk Level Boundaries:** Established that reading (`READ_ONLY`), drafting (`MUTATING`), and sending (`EXTERNAL_SIDE_EFFECT`) operate at distinct risk levels.
-- [x] **Relational Persistence & AES-256-GCM Encryption:** Migrated `gmail_connections` table; credentials encrypted at rest (`iv:authTag:ciphertext`) with zero token exposure in logs, API responses, React state, or LLM context.
-- [x] **OAuth 2.0 Security & Anti-CSRF:** Tamper-proof HMAC-SHA256 signed `state` validation with automatic replay and expiry (>15 min) rejection.
-- [x] **Multi-Tenant & Tenant-Scoped Connections:** Connections strictly bound to `user_id` and `organization_id`; cross-tenant access completely rejected.
-- [x] **Governed Gmail Tools:** Implemented `gmail_get_profile`, `gmail_search`, `gmail_get_message`, `gmail_create_draft`, and `gmail_send` with Zod validation.
-- [x] **Untrusted Email Containment:** HTML sanitized to plain text via Cheerio; email observations enclosed in `<<<UNTRUSTED_EXTERNAL_EMAIL>>>` inert observation delimiters with character budget protection (`MAX_EMAIL_BODY_CHARS: 4000`).
-- [x] **External Side Effect Interception & Human Approval Staging:** Autonomous execution of `gmail_send` is strictly blocked; intercepted proposals stage records in MySQL `approvals` (`status: PENDING`), log audit events (`GMAIL_SEND_REQUESTED`, `GMAIL_SEND_BLOCKED`), and seamlessly prepare the handoff to Phase 17 Human Approval.
-- [x] **Frontend Gmail UI & Safety Badges:** Integrated connection card in `IntegrationsPage` and added `DRAFT CREATED — NOT SENT` badge and `APPROVAL REQUIRED` preview banners in `TaskManagementStudio`.
-- [x] **Exhaustive Automated Verification:** 27/27 unit, integration, and security tests passed (documented in `PHASE_16.md`). Full 104/104 regression pass across Phases 13, 14, 15, and 16.
+### Phase 17 Deliverables Summary (Human Approval & Controlled Actions)
+- [x] **Durable Approval State Machine:** Implemented strict lifecycle transitions (`PENDING` -> `APPROVED` -> `EXECUTING` -> `EXECUTED`, or `REJECTED`, `EXPIRED`, `CANCELLED`) backed by relational MySQL persistence.
+- [x] **Centralized Policy Engine:** Centralized risk classification policy (`ApprovalPolicyEngine`) routing `EXTERNAL_SIDE_EFFECT` tools to mandatory human approval queues while allowing safe `READ_ONLY` and `LOW_RISK` tools to proceed autonomously.
+- [x] **Zero LLM & Zero Client Bypass:** Formalized that approval is an authenticated, server-verified database state transition; rejected fake client booleans, prompt injections, and mock LLM approvals.
+- [x] **Immutable Action & Payload Binding:** Previews and stored execution payloads are locked at creation time; attempts to tamper with recipients or body content are strictly blocked.
+- [x] **Double-Execution & Concurrency Protection:** Atomic conditional updates (`UPDATE approvals SET status = 'EXECUTING' WHERE id = ? AND status = 'APPROVED'`) prevent race conditions and duplicate real-world side effects.
+- [x] **Multi-Tenant Isolation & Anti-IDOR:** All approval operations are scoped by authenticated `organizationId`; cross-tenant viewing and decisions are strictly blocked.
+- [x] **Dynamic TTL & Expiration Handling:** Configurable approval TTL with automatic expiration checks blocking stale authorizations.
+- [x] **Agent Runtime Integration (`WAITING_FOR_APPROVAL`):** The Agent pauses cleanly without pretending the tool executed; when approved, it executes under policy re-check and completes the task; when rejected, it halts safely with reviewer feedback.
+- [x] **Dedicated Human Review UI:** Built `/app/approvals` Review Center with detailed action preview (tool, risk, recipient, subject, sanitized body, countdown) and rejection note prompt.
+- [x] **Comprehensive Verification:** 21/21 tests passed in `testPhase17.ts`. 125/125 tests passed across Phases 13–17 regression suite. Documented in `PHASE_17.md`.
 
 ---
 

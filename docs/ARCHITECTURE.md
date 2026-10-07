@@ -355,3 +355,48 @@ graph TD
    - Untrusted email bodies wrapped in `<<<UNTRUSTED_EXTERNAL_EMAIL>>>` inert delimiters with safety notices and size bounds (`MAX_EMAIL_BODY_CHARS: 4000`).
 5. **Multi-Tenant Scoping:**
    - All Gmail connections are scoped strictly to authenticated `user_id` and `organization_id`.
+
+---
+
+## 12. Human Approval & Controlled External Actions (Phase 17)
+
+Phase 17 introduces the formal **Human-in-the-Loop (HITL) Governance & Approval System** for sensitive AI workforce actions.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Human Reviewer (UI)
+    participant Task as Task Runtime
+    participant Agent as Agent Execution
+    participant Policy as Policy Engine
+    participant ApprSvc as Approval Service
+    participant DB as MySQL DB
+    participant Tool as Tool (gmail_send)
+
+    Task->>Agent: Run Task Steps
+    Agent->>Policy: Propose gmail_send
+    Policy-->>Agent: Risk: EXTERNAL_SIDE_EFFECT (Approval Required)
+    Agent->>ApprSvc: createApproval(payload, taskId, stepId)
+    ApprSvc->>DB: INSERT approvals (status='PENDING', expires_at=NOW()+TTL)
+    ApprSvc->>DB: UPDATE tasks SET status='WAITING_FOR_APPROVAL'
+    ApprSvc-->>Agent: Approval staged (id)
+    Agent-->>Task: PAUSE execution (WAITING_FOR_APPROVAL)
+
+    Note over User,Task: Safe Pause — No fake tool completion
+
+    User->>ApprSvc: POST /api/approvals/:id/approve
+    ApprSvc->>DB: Policy Re-check (anti-tamper, TTL, tenant isolation)
+    ApprSvc->>DB: UPDATE approvals SET status='EXECUTING' WHERE status='APPROVED'
+    ApprSvc->>Tool: Execute approved action (send email)
+    Tool-->>ApprSvc: Delivery receipt
+    ApprSvc->>DB: UPDATE approvals SET status='EXECUTED', executed_at=NOW()
+    ApprSvc->>DB: UPDATE tasks SET status='COMPLETED'
+    ApprSvc-->>User: Execution confirmed
+```
+
+### Core Governance Axioms:
+1. **Durable State Transitions:** Approval is an authenticated, tenant-isolated state transition in MySQL, never an LLM token or client boolean.
+2. **Immutable Action Binding:** The stored execution payload is strictly verified against the approved proposal before dispatch.
+3. **Double-Execution Guard:** Atomic transition (`APPROVED` -> `EXECUTING`) prevents duplicate execution during network retries or concurrent clicks.
+4. **Anti-IDOR & Multi-Tenancy:** Scoped by authenticated `organizationId`; cross-tenant review is rejected with 404/403.
+5. **No Blind Approval:** Human review UI displays complete proposed action details (tool, recipient, subject, sanitized body preview, risk badge, TTL countdown) and captures reviewer notes.

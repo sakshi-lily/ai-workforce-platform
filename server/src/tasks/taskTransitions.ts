@@ -40,7 +40,8 @@ export class InvalidTaskStateTransitionError extends Error {
  */
 export const ALLOWED_TRANSITIONS: Record<TaskLifecycleState, TaskLifecycleState[]> = {
   REQUESTED: ["RUNNING", "CANCELLED"],
-  RUNNING: ["COMPLETED", "FAILED", "CANCELLED"],
+  RUNNING: ["COMPLETED", "FAILED", "CANCELLED", "WAITING_FOR_APPROVAL"],
+  WAITING_FOR_APPROVAL: ["RUNNING", "COMPLETED", "FAILED", "CANCELLED"],
   COMPLETED: [], // Terminal
   FAILED: [],    // Terminal
   CANCELLED: [], // Terminal

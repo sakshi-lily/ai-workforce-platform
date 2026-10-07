@@ -381,12 +381,22 @@ export class GmailService {
       taskId: context.taskId,
     };
 
-    // 3. Stage into approvals table
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    // 3. Stage into approvals table with full Phase 17 metadata
     await pool.query(
       `INSERT INTO approvals 
-        (id, task_id, action_type, payload_preview, status)
-       VALUES (?, ?, ?, ?, 'PENDING')`,
-      [approvalId, context.taskId, "gmail_send", JSON.stringify(payloadPreview)]
+        (id, task_id, organization_id, requested_by, tool_name, risk_level, action_type, payload_preview, request_payload, status, expires_at, requested_at, created_at)
+       VALUES (?, ?, ?, ?, 'gmail_send', 'EXTERNAL_SIDE_EFFECT', 'gmail_send', ?, ?, 'PENDING', ?, NOW(), NOW())`,
+      [
+        approvalId,
+        context.taskId,
+        orgId,
+        context.userId,
+        JSON.stringify(payloadPreview),
+        JSON.stringify(send),
+        expiresAt,
+      ]
     );
 
     // 4. Audit logging
@@ -416,6 +426,42 @@ export class GmailService {
         "External email transmission has been intercepted and staged for Human Approval (Phase 17). No email was sent.",
       details: payloadPreview,
     };
+  }
+
+  /**
+   * Executes direct external send AFTER human approval has been verified by the ApprovalService.
+   */
+  public async sendEmailDirect(
+    send: GmailSendInput,
+    context: ToolContext
+  ): Promise<GmailSendResult> {
+    const orgId = context.organizationId || "org-demo-001";
+    const token = await this.getDecryptedToken(context.userId, orgId);
+
+    // Validate inputs
+    if (!send.to || send.to.length === 0) {
+      throw new GmailError("Recipient email is required to send.", "GMAIL_INVALID_REQUEST");
+    }
+    if (!send.subject || send.subject.trim().length === 0) {
+      throw new GmailError("Subject is required to send.", "GMAIL_INVALID_REQUEST");
+    }
+
+    const result = await this.provider.sendMessage(token, send);
+
+    await this.logAuditEvent({
+      userId: context.userId,
+      organizationId: orgId,
+      taskId: context.taskId,
+      eventType: "GMAIL_SEND_COMPLETED",
+      action: "send_completed",
+      details: {
+        to: send.to,
+        subject: send.subject,
+        messageId: result.messageId,
+      },
+    });
+
+    return result;
   }
 
   // ---------------------------------------------------------------------------

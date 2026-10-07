@@ -21,6 +21,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
   const navItems: NavItem[] = [
     { name: 'Dashboard', href: '/app', icon: '📊' },
     { name: 'Tasks', href: '/app/tasks', icon: '📋' },
+    { name: 'Approvals', href: '/app/approvals', icon: '🛡️' },
     { name: 'Agent', href: '/app/agent', icon: '🤖' },
     { name: 'Knowledge', href: '/app/knowledge', icon: '🧠' },
     { name: 'Integrations', href: '/app/integrations', icon: '🔌' },

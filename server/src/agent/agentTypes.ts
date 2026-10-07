@@ -9,6 +9,7 @@ export type StepLifecycleStatus =
   | "READY"
   | "RUNNING"
   | "IN_PROGRESS"
+  | "WAITING_FOR_APPROVAL"
   | "COMPLETED"
   | "FAILED"
   | "SKIPPED";

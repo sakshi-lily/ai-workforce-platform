@@ -124,7 +124,7 @@ export class AgentRuntime {
   private static async updateStepInDatabase(
     dbStepId: string,
     updates: {
-      status: "PENDING" | "IN_PROGRESS" | "COMPLETED" | "FAILED" | "SKIPPED";
+      status: "PENDING" | "IN_PROGRESS" | "WAITING_FOR_APPROVAL" | "COMPLETED" | "FAILED" | "SKIPPED";
       toolName?: string | null;
       outputData?: unknown;
       errorMessage?: string | null;
@@ -348,9 +348,10 @@ export class AgentRuntime {
 
             logState("TOOL_REQUESTED", `Model requested tool '${requestedTool}' for step '${activeStep.id}'.`);
 
-            // Phase 16: Intercept external side-effect tools (gmail_send) at the Approval Boundary
-            if (requestedTool === "gmail_send") {
-              logState("TOOL_REQUESTED", `Tool 'gmail_send' proposed by model. Intercepting at approval boundary (Phase 16).`);
+            // Phase 17: Intercept external side-effect tools (gmail_send) at the Approval Boundary
+            const toolMeta = toolRegistry.getTool(requestedTool);
+            if (requestedTool === "gmail_send" || toolMeta?.riskLevel === "EXTERNAL_SIDE_EFFECT") {
+              logState("TOOL_REQUESTED", `Tool '${requestedTool}' proposed by model. Intercepting at approval boundary (Phase 17).`);
               const toolStartTime = performance.now();
               const stageResult = await gmailService.stageSendForApproval(
                 requestedArgs as any,
@@ -383,29 +384,59 @@ export class AgentRuntime {
                 success: true,
               });
 
-              const observation: AgentObservation = {
-                type: "tool_result",
-                tool: requestedTool,
-                status: "success",
-                summary: `External communication staged for Human Approval: ${stageResult.reason} (Approval ID: ${stageResult.approvalId})`,
-                data: approvalData,
-                durationMs,
-                timestamp: new Date().toISOString(),
-                stepId: activeStep.id,
-              };
-
-              contextManager.addObservation(observation);
-              activeStep.status = "COMPLETED";
-              activeStep.resultSummary = observation.summary;
+              // Update step in database to WAITING_FOR_APPROVAL
+              activeStep.status = "WAITING_FOR_APPROVAL" as any;
+              activeStep.resultSummary = `Approval required (ID: ${stageResult.approvalId}). Waiting for human review.`;
               await this.updateStepInDatabase(dbStepId, {
-                status: "COMPLETED",
+                status: "WAITING_FOR_APPROVAL",
                 toolName: requestedTool,
                 outputData: approvalData,
-                completedAt: true,
               });
 
-              stepCompleted = true;
-              break;
+              // Persist task state as WAITING_FOR_APPROVAL in MySQL
+              await pool.query(
+                `UPDATE tasks SET status = 'WAITING_FOR_APPROVAL', updated_at = NOW() WHERE id = ?;`,
+                [taskId]
+              );
+
+              logState("WAITING_APPROVAL", `Task execution paused awaiting Human Approval for '${requestedTool}' (Approval ID: ${stageResult.approvalId}).`);
+
+              // Conclude runtime loop safely without claiming completion
+              const totalLatency = Date.now() - startTime;
+              const waitingSteps: AgentTaskStepEntity[] = plan.steps.map((s) => ({
+                id: stepDbIdMap.get(s.id) || s.id,
+                task_id: taskId,
+                step_order: s.order,
+                title: s.title,
+                description: s.description,
+                status: s.status as any,
+                tool_name: (s as any).selectedTool || null,
+                dependencies: s.dependencies || [],
+                input_data: (s as any).arguments || null,
+                output_data: s.resultSummary ? ({ summary: s.resultSummary } as any) : null,
+                error_message: s.error || null,
+                started_at: null,
+                completed_at: null,
+                created_at: new Date().toISOString(),
+              }));
+
+              return {
+                taskId,
+                status: "WAITING_FOR_APPROVAL" as any,
+                cycles: executionCycle,
+                latencyMs: totalLatency,
+                plan,
+                steps: waitingSteps,
+                finalAnswer: `Task paused at Human Approval boundary. Sensitive action '${requestedTool}' requires authorized human review. (Approval ID: ${stageResult.approvalId})`,
+                result: `Waiting for approval (ID: ${stageResult.approvalId})`,
+                toolExecutions: executedToolRecords,
+                telemetry: {
+                  model: "gpt-4o-mini",
+                  totalTokens: 1000 + executionCycle * 250,
+                  estimatedCostUsd: 0.003 + executionCycle * 0.0005,
+                },
+                timeline,
+              };
             }
 
             // Policy authorization check

@@ -559,3 +559,51 @@ All endpoints mandate `Authorization: Bearer <JWT>`.
 | `gmail_get_message` | `READ_ONLY` | `{ messageId: string }` | `{ messageId, threadId, from, to, subject, snippet, plainTextBody, hasAttachments, receivedAt }` |
 | `gmail_create_draft` | `MUTATING` | `{ to: string[], subject: string, body: string, threadId?: string }` | `{ draftId, messageId, status: "DRAFT_CREATED", to, subject, snippet }` |
 | `gmail_send` | `EXTERNAL_SIDE_EFFECT` | `{ to: string[], subject: string, body: string, reason?: string }` | `{ status: "APPROVAL_REQUIRED", approvalId, message: "External side effect staged for Phase 17 Human Approval" }` |
+
+---
+
+## 5. Human Approval Endpoints (Phase 17)
+
+All approval endpoints require `Authorization: Bearer <JWT>`. Organization context is strictly derived from the authenticated token session.
+
+### 5.1 List Approvals
+- **Endpoint:** `GET /api/approvals`
+- **Query Parameters:** `status` (optional: `PENDING`, `APPROVED`, `EXECUTING`, `EXECUTED`, `REJECTED`, `EXPIRED`, `CANCELLED`), `limit` (default 50), `offset` (default 0).
+- **Description:** Returns all approval requests belonging to the authenticated user's organization.
+
+### 5.2 Get Approval by ID
+- **Endpoint:** `GET /api/approvals/:id`
+- **Description:** Returns full details of an approval request, including target tool, sanitized preview, task context, risk tier, and expiration. Returns `404 Not Found` if requested by another organization (Anti-IDOR).
+
+### 5.3 Approve Action
+- **Endpoint:** `POST /api/approvals/:id/approve`
+- **Request Body:**
+  ```json
+  {
+    "decision": "APPROVED",
+    "note": "Authorized for customer delivery."
+  }
+  ```
+- **Description:** Authorizes and executes the staged action under strict policy re-check and double-execution protection.
+
+### 5.4 Reject Action
+- **Endpoint:** `POST /api/approvals/:id/reject`
+- **Request Body:**
+  ```json
+  {
+    "decision": "REJECTED",
+    "reason": "Do not contact this customer yet."
+  }
+  ```
+- **Description:** Rejects the proposed action and halts the linked task step cleanly.
+
+### 5.5 Cancel Approval
+- **Endpoint:** `POST /api/approvals/:id/cancel`
+- **Request Body:**
+  ```json
+  {
+    "reason": "Cancelled by operator."
+  }
+  ```
+- **Description:** Cancels a pending approval.
+

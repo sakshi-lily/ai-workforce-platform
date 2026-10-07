@@ -17,6 +17,8 @@ export type AgentLifecycleState =
   | "TOOL_AUTHORIZED"
   | "TOOL_EXECUTING"
   | "TOOL_COMPLETED"
+  | "WAITING_APPROVAL"
+  | "WAITING_FOR_APPROVAL"
   | "COMPLETED"
   | "FAILED"
   | "CANCELLED";
@@ -42,7 +44,7 @@ export const AdvancedPlanStepSchema = z.object({
   description: z.string().min(3, "Step description must be at least 3 characters").max(1000),
   dependencies: z.array(z.string()).default([]),
   allowedTools: z.array(z.string()).default([]),
-  status: z.enum(["PENDING", "READY", "IN_PROGRESS", "COMPLETED", "FAILED", "SKIPPED"]).default("PENDING"),
+  status: z.enum(["PENDING", "READY", "IN_PROGRESS", "WAITING_FOR_APPROVAL", "COMPLETED", "FAILED", "SKIPPED"]).default("PENDING"),
 });
 
 export type AdvancedPlanStepDTO = z.infer<typeof AdvancedPlanStepSchema>;

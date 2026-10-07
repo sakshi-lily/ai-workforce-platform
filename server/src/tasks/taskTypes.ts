@@ -7,6 +7,7 @@
 export type TaskLifecycleState =
   | "REQUESTED"
   | "RUNNING"
+  | "WAITING_FOR_APPROVAL"
   | "COMPLETED"
   | "FAILED"
   | "CANCELLED";
@@ -86,4 +87,13 @@ export interface TaskDetails {
     estimatedCostUsd: number;
   } | null;
   sources: string[];
+  approvals?: Array<{
+    id: string;
+    action_type: string;
+    tool_name?: string;
+    status: string;
+    payload_preview: Record<string, unknown>;
+    created_at: string;
+    expires_at?: string | null;
+  }>;
 }

@@ -113,14 +113,14 @@ The central operational entity representing a durable unit of AI work.
 - `organization_id` (VARCHAR 64): Authoritative tenant ID for strict query scoping.
 - `title` (VARCHAR 255): Human-readable task title.
 - `prompt` / `goal` (TEXT): Original user natural-language goal.
-- `status` (ENUM 'REQUESTED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED'): Authoritative host-controlled state machine.
+- `status` (ENUM 'PENDING', 'REQUESTED', 'IN_PROGRESS', 'RUNNING', 'AWAITING_APPROVAL', 'WAITING_FOR_APPROVAL', 'COMPLETED', 'FAILED', 'CANCELLED'): Authoritative host-controlled state machine (extended in Phase 17 with `WAITING_FOR_APPROVAL`).
 - `priority` (ENUM 'LOW', 'NORMAL', 'HIGH', 'URGENT'): Execution priority.
 - `final_report` (MEDIUMTEXT): Durable validated outcome/synthesis.
 - `prompt_tokens`, `completion_tokens`, `total_cost_usd`: Telemetry metrics.
 - `started_at`, `completed_at`, `created_at`, `updated_at`: Timestamps.
 
 ### 2.3 `task_steps`
-Represents individual subtasks and execution milestones. Maintains deterministic execution sequence (`step_order`), tool references, inputs/outputs, and step status (`PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, `SKIPPED`).
+Represents individual subtasks and execution milestones. Maintains deterministic execution sequence (`step_order`), tool references, inputs/outputs, and step status (`PENDING`, `IN_PROGRESS`, `WAITING_FOR_APPROVAL`, `COMPLETED`, `FAILED`, `SKIPPED`).
 - In Phase 15, `input_data` stores DAG execution metadata: `{ "dependencies": string[], "allowedTools": string[], "description": string }` to power the deterministic step scheduler and UI dependency visualization.
 
 ### 2.4 `customers`
@@ -129,11 +129,26 @@ The operational CRM dataset. Scoped strictly to `organization_id` with composite
 ### 2.5 `tool_executions`
 Granular telemetry log recording every single internal/external tool invocation. Linked to parent task (`task_id`) and parent step (`step_id`) with arguments, response payloads, duration, and error codes.
 
-### 2.6 `approvals`
-Stateful Human-in-the-Loop staging table. Holds proposed mutations (e.g., email drafts, database updates) until explicitly reviewed by the user.
+### 2.6 `approvals` (Extended in Phase 17)
+Durable Human-in-the-Loop staging table for sensitive AI workforce actions.
+- `id` (VARCHAR 64 PK): Unique approval identifier.
+- `task_id` (VARCHAR 36 FK): Linked parent task.
+- `step_id` (VARCHAR 36 FK NULL): Linked execution step.
+- `organization_id` (VARCHAR 64): Authoritative tenant ID for strict anti-IDOR scoping.
+- `requested_by` (VARCHAR 64): User identity that initiated the task.
+- `approved_by` (VARCHAR 64 NULL): Authenticated reviewer who made the decision.
+- `tool_name` (VARCHAR 100): Target tool (e.g. `gmail_send`).
+- `risk_level` (VARCHAR 50): Risk tier (e.g. `EXTERNAL_SIDE_EFFECT`).
+- `action_type` (VARCHAR 100): Logical action name.
+- `payload_preview` (JSON): Sanitized preview rendered in human review UI.
+- `request_payload` (JSON): Immutable execution parameters bound to the action.
+- `status` (ENUM 'PENDING', 'APPROVED', 'EXECUTING', 'EXECUTED', 'REJECTED', 'EXPIRED', 'CANCELLED', 'MODIFIED'): Authoritative state machine.
+- `decision_note` / `reviewer_notes` (TEXT): Reviewer explanation / rationale.
+- `requested_at`, `decided_at`, `expires_at`, `executed_at`, `created_at`: Lifecycle timestamps.
+- Indexes: `(organization_id, status)`, `expires_at`, `(task_id, status)`.
 
 ### 2.7 `audit_logs`
-Immutable compliance and security record tracking sensitive authentication and task lifecycle events (`USER_REGISTERED`, `USER_LOGIN_SUCCESS`, `TASK_CREATED`, `TASK_STARTED`, `TASK_COMPLETED`, `TASK_FAILED`, `TASK_CANCELLED`, `TASK_UPDATED`), action, actor `user_id`, and `organization_id`.
+Immutable compliance and security record tracking sensitive authentication, task, and approval lifecycle events (`USER_REGISTERED`, `USER_LOGIN_SUCCESS`, `TASK_CREATED`, `TASK_CANCELLED`, `APPROVAL_CREATED`, `APPROVAL_APPROVED`, `APPROVAL_REJECTED`, `APPROVAL_EXECUTION_STARTED`, `APPROVAL_EXECUTION_COMPLETED`, `APPROVAL_CANCELLED`), action, actor `user_id`, and `organization_id`.
 
 ### 2.8 `ai_telemetry`
 Records granular LLM token usage, duration, model identifiers, and dollar cost for every task execution run (`task_id`, `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `latency_ms`, `estimated_cost_usd`, `created_at`).

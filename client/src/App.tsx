@@ -11,6 +11,7 @@ import { AgentPage } from './pages/AgentPage';
 import { KnowledgePage } from './pages/KnowledgePage';
 import { IntegrationsPage } from './pages/IntegrationsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ApprovalsPage } from './pages/ApprovalsPage';
 
 export default function App() {
   const { authState } = useAuth();
@@ -79,6 +80,8 @@ export default function App() {
 
     if (path === '/app/tasks' || path.startsWith('/app/tasks/')) {
       content = <TaskManagementStudio />;
+    } else if (path === '/app/approvals' || path.startsWith('/app/approvals/')) {
+      content = <ApprovalsPage />;
     } else if (path === '/app/agent' || path.startsWith('/app/agent/')) {
       content = <AgentPage />;
     } else if (path === '/app/knowledge' || path.startsWith('/app/knowledge/')) {

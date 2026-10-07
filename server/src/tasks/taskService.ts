@@ -311,12 +311,32 @@ export class TaskService {
       sourcesSet.add("Language Model Synthesis");
     }
 
+    // 5. Fetch linked approvals (Phase 17)
+    const [approvalRows] = await pool.query<RowDataPacket[]>(
+      `SELECT id, action_type, tool_name, status, payload_preview, created_at, expires_at 
+       FROM approvals 
+       WHERE task_id = ? 
+       ORDER BY created_at DESC;`,
+      [taskId]
+    );
+
+    const approvals = approvalRows.map((a) => ({
+      id: String(a.id),
+      action_type: String(a.action_type),
+      tool_name: a.tool_name ? String(a.tool_name) : undefined,
+      status: String(a.status),
+      payload_preview: typeof a.payload_preview === "string" ? JSON.parse(a.payload_preview) : a.payload_preview || {},
+      created_at: new Date(a.created_at).toISOString(),
+      expires_at: a.expires_at ? new Date(a.expires_at).toISOString() : null,
+    }));
+
     return {
       task,
       steps,
       toolExecutions,
       telemetry,
       sources: Array.from(sourcesSet),
+      approvals,
     };
   }
 
@@ -374,6 +394,28 @@ export class TaskService {
        WHERE id = ?;`,
       [taskId]
     );
+
+    // Phase 17: Cancel linked pending or approved approvals for this task
+    const [linkedApprovals] = await pool.query<RowDataPacket[]>(
+      `SELECT id FROM approvals WHERE task_id = ? AND status IN ('PENDING', 'APPROVED');`,
+      [taskId]
+    );
+
+    if (linkedApprovals.length > 0) {
+      await pool.query(
+        `UPDATE approvals 
+         SET status = 'CANCELLED', decision_note = 'Parent task cancelled by user.' 
+         WHERE task_id = ? AND status IN ('PENDING', 'APPROVED');`,
+        [taskId]
+      );
+
+      for (const row of linkedApprovals) {
+        await this.recordTaskAudit(authUser.id, organizationId, taskId, "APPROVAL_CANCELLED", {
+          approvalId: row.id,
+          reason: "Parent task cancelled by user.",
+        });
+      }
+    }
 
     await this.recordTaskAudit(authUser.id, organizationId, taskId, "TASK_CANCELLED", {
       previousStatus: task.status,

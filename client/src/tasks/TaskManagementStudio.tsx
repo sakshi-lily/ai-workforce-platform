@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../auth/AuthContext';
 
-export type TaskStatus = 'REQUESTED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+export type TaskStatus = 'REQUESTED' | 'RUNNING' | 'WAITING_FOR_APPROVAL' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 export type TaskPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
 
 export interface TaskSummary {
@@ -23,7 +23,7 @@ export interface TaskStep {
   step_order: number;
   title: string;
   description: string;
-  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'SKIPPED';
+  status: 'PENDING' | 'IN_PROGRESS' | 'WAITING_FOR_APPROVAL' | 'COMPLETED' | 'FAILED' | 'SKIPPED';
   tool_name: string | null;
   dependencies?: string[];
   input_data: Record<string, unknown> | null;
@@ -622,7 +622,7 @@ export const TaskManagementStudio: React.FC = () => {
           <div className="p-4 rounded-2xl bg-slate-900/60 backdrop-blur-md border border-slate-800 shadow-xl space-y-3">
             {/* Status Filter Chips */}
             <div className="flex flex-wrap items-center gap-1.5 text-xs border-b border-slate-800/80 pb-3">
-              {['ALL', 'REQUESTED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED'].map((st) => (
+              {['ALL', 'REQUESTED', 'RUNNING', 'WAITING_FOR_APPROVAL', 'COMPLETED', 'FAILED', 'CANCELLED'].map((st) => (
                 <button
                   key={st}
                   type="button"
@@ -790,7 +790,16 @@ export const TaskManagementStudio: React.FC = () => {
                     </button>
                   )}
 
-                  {(taskDetails.task.status === 'REQUESTED' || taskDetails.task.status === 'RUNNING') && (
+                  {taskDetails.task.status === 'WAITING_FOR_APPROVAL' && (
+                    <a
+                      href="/app/approvals"
+                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition shadow-lg shadow-amber-500/20 cursor-pointer flex items-center gap-1.5"
+                    >
+                      <span>🛡️ Review Approval</span>
+                    </a>
+                  )}
+
+                  {(taskDetails.task.status === 'REQUESTED' || taskDetails.task.status === 'RUNNING' || taskDetails.task.status === 'WAITING_FOR_APPROVAL') && (
                     <button
                       type="button"
                       disabled={cancellingTaskId === taskDetails.task.id}
@@ -886,12 +895,15 @@ export const TaskManagementStudio: React.FC = () => {
                     const isCompleted = step.status === 'COMPLETED';
                     const isFailed = step.status === 'FAILED';
                     const isRunning = step.status === 'IN_PROGRESS';
+                    const isWaitingApproval = step.status === 'WAITING_FOR_APPROVAL';
 
                     return (
                       <div
                         key={step.id}
                         className={`p-3.5 rounded-xl border transition-all space-y-2.5 ${
-                          isCompleted
+                          isWaitingApproval
+                            ? 'bg-amber-950/30 border-amber-500/80 shadow-lg shadow-amber-950/40'
+                            : isCompleted
                             ? 'bg-slate-950/80 border-slate-800/80 hover:border-slate-700'
                             : isRunning
                             ? 'bg-indigo-950/40 border-indigo-500/80 shadow-lg shadow-indigo-950/40'
@@ -904,7 +916,9 @@ export const TaskManagementStudio: React.FC = () => {
                           <div className="flex items-start gap-2.5">
                             <span
                               className={`px-2 py-0.5 rounded font-mono text-xs font-bold shrink-0 ${
-                                isCompleted
+                                isWaitingApproval
+                                  ? 'bg-amber-950 text-amber-300 border border-amber-600 animate-pulse'
+                                  : isCompleted
                                   ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
                                   : isRunning
                                   ? 'bg-indigo-950 text-indigo-300 border border-indigo-700 animate-pulse'
@@ -918,7 +932,7 @@ export const TaskManagementStudio: React.FC = () => {
                             <div>
                               <div className="flex items-center gap-2">
                                 <span className="text-xs">
-                                  {isCompleted ? '✓' : isRunning ? '●' : isFailed ? '✗' : '○'}
+                                  {isWaitingApproval ? '⏸' : isCompleted ? '✓' : isRunning ? '●' : isFailed ? '✗' : '○'}
                                 </span>
                                 <h5 className="text-xs font-semibold text-white">{step.title}</h5>
                               </div>
@@ -927,7 +941,9 @@ export const TaskManagementStudio: React.FC = () => {
                           </div>
                           <span
                             className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold shrink-0 ${
-                              isCompleted
+                              isWaitingApproval
+                                ? 'bg-amber-950 text-amber-300 border border-amber-600 animate-pulse'
+                                : isCompleted
                                 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/60'
                                 : isFailed
                                 ? 'bg-rose-950 text-rose-300 border border-rose-800/60'
@@ -936,7 +952,7 @@ export const TaskManagementStudio: React.FC = () => {
                                 : 'bg-slate-900 text-slate-400 border border-slate-800'
                             }`}
                           >
-                            {step.status}
+                            {step.status === 'WAITING_FOR_APPROVAL' ? 'APPROVAL REQUIRED' : step.status}
                           </span>
                         </div>
 
