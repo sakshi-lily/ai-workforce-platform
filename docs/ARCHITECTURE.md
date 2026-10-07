@@ -205,3 +205,105 @@ Durable History & Audit Trail (MySQL: audit_logs)
 - **Concurrency Protection:** Starting an already running task or transitioning from terminal states (`COMPLETED`, `FAILED`, `CANCELLED`) yields HTTP 409 Conflict.
 - **Cancellation:** Permitted only from active states (`REQUESTED` or `RUNNING`). Terminal tasks cannot be cancelled.
 
+---
+
+## 7. Phase 15 Advanced Agent Architecture
+
+Phase 15 elevates the execution system into an authoritative, deterministic, resumable, multi-step **Advanced Agent Runtime**.
+
+### Core Architectural Principle
+> **"The LLM proposes. The Agent Host decides. The application executes."**
+
+The LLM is strictly treated as an untrusted advisory component. It never owns:
+- Task or step lifecycle status
+- Tenant identity or user authentication
+- Tool authorization or permission scoping
+- Retry limits or watchdog policies
+- Database or vector database operations
+
+```text
+                    ┌─────────────────────┐
+                    │     React Client    │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │    Express API      │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │ Authentication      │
+                    │ + Tenant Context    │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │    Task Service     │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │   Agent Runtime     │
+                    │                     │
+                    │ Planner             │
+                    │ Policy Gateway      │
+                    │ Context Manager     │
+                    │ Step Scheduler (DAG)│
+                    │ Decision Validator  │
+                    │ Watchdogs           │
+                    │ Synthesis Engine    │
+                    └──────────┬──────────┘
+                               │
+                ┌──────────────┼──────────────┐
+                │              │              │
+                ▼              ▼              ▼
+             LLM          Tool Registry    Task State (MySQL)
+                              │
+              ┌───────────────┼────────────────┐
+              │               │                │
+              ▼               ▼                ▼
+          Web Search       MySQL/RAG       Local Tools
+```
+
+### Key Subsystems & Boundaries
+
+1. **Structured DAG Planning & Cycle Detection (`agentDAG.ts`):**
+   - Plans are modeled as Directed Acyclic Graphs with explicit step prerequisites (`dependencies[]`).
+   - Evaluated by a 3-color DFS traversal (`WHITE`, `GRAY`, `BLACK`) detecting circular dependencies, self-dependencies, duplicate IDs, and dangling references before execution begins.
+   - Deterministic `findNextRunnableStep` selects the lowest-order runnable step whose dependencies have all reached `COMPLETED`.
+
+2. **Policy Gateway (`agentPolicy.ts`):**
+   - Strictly enforces tool allowlists per step (`allowedTools[]`).
+   - Categorizes risk levels (`READ_ONLY`, `LOW_RISK` vs blocked `MUTATING` / `EXTERNAL_SIDE_EFFECT`).
+   - Rejects prohibited tools (`execute_sql`, `shell_exec`, `gmail_send`) even if requested by the LLM.
+   - Injects server-verified tenant identity into all governed tool executions.
+
+3. **Bounded Context Manager (`agentContext.ts`):**
+   - Strictly bounds token/character budgets (`MAX_CONTEXT_CHARS`, `MAX_OBSERVATIONS`, `MAX_TOOL_OUTPUT_CHARS`).
+   - Protects against indirect prompt injection by wrapping tool observations in explicit isolation tags:
+     `<<<UNTRUSTED_EXTERNAL_OBSERVATION>>>`
+   - Strips dangerous instruction patterns from untrusted observation payloads.
+
+4. **Structured Decision Contract (`agentDecision.ts`):**
+   - Requires strongly typed schema output: `CALL_TOOL`, `CONTINUE`, `COMPLETE`, `FAIL`.
+   - Rejects unparseable or out-of-spec actions, falling back to safe parsing or failing cleanly.
+
+5. **Execution Watchdogs (`agentWatchdog.ts`):**
+   - Active governors:
+     - `MAX_AGENT_CYCLES`: 15 iterations.
+     - `MAX_TOOL_CALLS`: 20 total invocations.
+     - `MAX_EXECUTION_TIME_MS`: 180,000 ms.
+     - `MAX_STEP_RETRIES`: 2 attempts for transient errors.
+     - `MAX_REPLANS`: 2 bounded replanning iterations.
+     - `INFINITE_LOOP_PROTECTION`: SHA-256 fingerprint tracking halts consecutive identical tool calls.
+
+6. **Bounded Recovery & Replanning (`agentPlanner.ts`):**
+   - Categorizes failures into `VALIDATION_ERROR`, `POLICY_ERROR`, `PROVIDER_ERROR`, `TIMEOUT_ERROR`, `UNKNOWN_ERROR`.
+   - On recoverable step failure, generates updated remaining steps with sanitized dependencies tied to existing completed steps.
+
+7. **Multi-Source Grounded Synthesis (`agentResult.ts`):**
+   - Gathers execution observations across `Customer Database (MySQL)`, `Web Search`, and `Internal Knowledge Base (Qdrant)`.
+   - Produces a grounded report with verified findings and confidence scores.
+
+

@@ -42,6 +42,7 @@ export interface TaskStepEntity {
   description: string;
   status: "PENDING" | "IN_PROGRESS" | "COMPLETED" | "FAILED" | "SKIPPED";
   tool_name?: string | null;
+  dependencies?: string[];
   input_data?: Record<string, unknown> | null;
   output_data?: Record<string, unknown> | null;
   error_message?: string | null;
@@ -49,6 +50,7 @@ export interface TaskStepEntity {
   completed_at?: string | null;
   created_at: string;
 }
+
 
 export interface TaskSummary {
   id: string;

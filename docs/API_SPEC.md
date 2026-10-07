@@ -442,4 +442,94 @@ All task management endpoints require authentication (`Authorization: Bearer <to
   }
   ```
 
+---
+
+## 3. Advanced Agent Runtime Contracts (Phase 15)
+
+Phase 15 defines formal schema contracts governing LLM planning, decision making, and synthesis.
+
+### 3.1 Advanced Agent Plan Schema (`AgentPlan`)
+- **Description:** Structured DAG execution plan produced by Planner and validated before execution.
+- **Zod Schema:**
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "goal": { "type": "string" },
+      "summary": { "type": "string" },
+      "steps": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "title": { "type": "string" },
+            "description": { "type": "string" },
+            "order": { "type": "integer" },
+            "dependencies": { "type": "array", "items": { "type": "string" } },
+            "allowedTools": { "type": "array", "items": { "type": "string" } },
+            "status": { "type": "string", "enum": ["PENDING", "READY", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"] }
+          },
+          "required": ["id", "title", "description", "order", "dependencies", "allowedTools"]
+        }
+      }
+    },
+    "required": ["goal", "summary", "steps"]
+  }
+  ```
+
+---
+
+### 3.2 Agent Decision Schema (`AgentDecision`)
+- **Description:** Strongly validated decision payload returned by the LLM on each execution cycle.
+- **Zod Schema:**
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "type": { "type": "string", "enum": ["CALL_TOOL", "CONTINUE", "COMPLETE", "FAIL"] },
+      "reasoningSummary": { "type": "string" },
+      "toolCall": {
+        "type": "object",
+        "properties": {
+          "tool": { "type": "string" },
+          "arguments": { "type": "object" }
+        },
+        "required": ["tool", "arguments"]
+      },
+      "finalAnswer": { "type": "string" },
+      "failureReason": { "type": "string" }
+    },
+    "required": ["type", "reasoningSummary"]
+  }
+  ```
+
+---
+
+### 3.3 Agent Final Synthesis Schema (`AgentFinalSynthesis`)
+- **Description:** Validated structured final outcome synthesizing verified evidence from all completed step observations.
+- **Zod Schema:**
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "summary": { "type": "string" },
+      "findings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "value": { "type": "string" }
+          },
+          "required": ["title", "value"]
+        }
+      },
+      "sources": { "type": "array", "items": { "type": "string" } },
+      "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+    },
+    "required": ["summary", "findings", "sources", "confidence"]
+  }
+  ```
+
 

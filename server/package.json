@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test:phase13": "tsx src/auth/testPhase13.ts",
+    "test:phase14": "tsx src/tasks/testPhase14.ts",
+    "test:phase15": "tsx src/agent/testPhase15.ts"
   },
   "dependencies": {
     "@qdrant/js-client-rest": "^1.19.0",

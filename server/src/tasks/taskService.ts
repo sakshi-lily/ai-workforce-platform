@@ -13,6 +13,7 @@ import { assertValidTaskTransition } from "./taskTransitions";
 import { AuthenticatedUser } from "../auth/types";
 import { executeAgentTask } from "../agent/agentHost";
 import { AgentExecutionResponse } from "../agent/agentSchemas";
+import { AgentRuntime } from "../agent/agentRuntime";
 
 export class TaskError extends Error {
   public code: string;
@@ -227,21 +228,25 @@ export class TaskService {
       [taskId]
     );
 
-    const steps: TaskStepEntity[] = stepRows.map((s) => ({
-      id: String(s.id),
-      task_id: String(s.task_id),
-      step_order: Number(s.step_order),
-      title: String(s.title),
-      description: String(s.description || ""),
-      status: s.status,
-      tool_name: s.tool_name ? String(s.tool_name) : null,
-      input_data: s.input_data ? (typeof s.input_data === "string" ? JSON.parse(s.input_data) : s.input_data) : null,
-      output_data: s.output_data ? (typeof s.output_data === "string" ? JSON.parse(s.output_data) : s.output_data) : null,
-      error_message: s.error_message ? String(s.error_message) : null,
-      started_at: s.started_at ? new Date(s.started_at).toISOString() : null,
-      completed_at: s.completed_at ? new Date(s.completed_at).toISOString() : null,
-      created_at: new Date(s.created_at).toISOString(),
-    }));
+    const steps: TaskStepEntity[] = stepRows.map((s) => {
+      const parsedInput = s.input_data ? (typeof s.input_data === "string" ? JSON.parse(s.input_data) : s.input_data) : null;
+      return {
+        id: String(s.id),
+        task_id: String(s.task_id),
+        step_order: Number(s.step_order),
+        title: String(s.title),
+        description: String(s.description || ""),
+        status: s.status,
+        tool_name: s.tool_name ? String(s.tool_name) : null,
+        dependencies: Array.isArray(parsedInput?.dependencies) ? parsedInput.dependencies : [],
+        input_data: parsedInput,
+        output_data: s.output_data ? (typeof s.output_data === "string" ? JSON.parse(s.output_data) : s.output_data) : null,
+        error_message: s.error_message ? String(s.error_message) : null,
+        started_at: s.started_at ? new Date(s.started_at).toISOString() : null,
+        completed_at: s.completed_at ? new Date(s.completed_at).toISOString() : null,
+        created_at: new Date(s.created_at).toISOString(),
+      };
+    });
 
     // 2. Fetch tool executions
     const [toolRows] = await pool.query<RowDataPacket[]>(
@@ -416,29 +421,20 @@ export class TaskService {
       priority: task.priority,
     });
 
-    // Execute agent using trusted host context and existingTaskId
+    // Execute agent using trusted host context and existingTaskId via Phase 15 AgentRuntime
     try {
-      const result = await executeAgentTask({
-        task: task.prompt,
-        title: task.title,
-        priority: task.priority,
-        userId: authUser.id,
-        organizationId: authUser.organizationId,
-        mode: options?.mode || "tools",
-        allowedTools: options?.allowedTools,
-        existingTaskId: task.id,
-      });
-
-      if (result.status === "COMPLETED") {
-        await this.recordTaskAudit(authUser.id, organizationId, taskId, "TASK_COMPLETED", {
-          cycles: result.cycles,
-          latencyMs: result.latencyMs,
-        });
-      } else {
-        await this.recordTaskAudit(authUser.id, organizationId, taskId, "TASK_FAILED", {
-          error: result.error,
-        });
-      }
+      const result = await AgentRuntime.run(
+        taskId,
+        {
+          userId: authUser.id,
+          organizationId: authUser.organizationId,
+          taskId: task.id,
+        },
+        {
+          mode: options?.mode,
+          allowedTools: options?.allowedTools,
+        }
+      );
 
       return result;
     } catch (err: unknown) {

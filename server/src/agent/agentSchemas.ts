@@ -33,7 +33,73 @@ export const PlanStepSchema = z.object({
 export type PlanStep = z.infer<typeof PlanStepSchema>;
 
 /**
- * Zod Schema for the complete Agent Execution Plan.
+ * Phase 15 — Advanced DAG Planned Step Schema
+ */
+export const AdvancedPlanStepSchema = z.object({
+  id: z.string().min(1, "Step ID cannot be empty").max(64),
+  order: z.number().int().positive("Step order must be a positive integer"),
+  title: z.string().min(1, "Step title cannot be empty").max(200),
+  description: z.string().min(3, "Step description must be at least 3 characters").max(1000),
+  dependencies: z.array(z.string()).default([]),
+  allowedTools: z.array(z.string()).default([]),
+  status: z.enum(["PENDING", "READY", "IN_PROGRESS", "COMPLETED", "FAILED", "SKIPPED"]).default("PENDING"),
+});
+
+export type AdvancedPlanStepDTO = z.infer<typeof AdvancedPlanStepSchema>;
+
+/**
+ * Phase 15 — Advanced DAG Execution Plan Schema
+ */
+export const AdvancedAgentPlanSchema = z.object({
+  goal: z.string().min(3, "Goal must be at least 3 characters").max(1000),
+  summary: z.string().min(5, "Summary must be at least 5 characters").max(2500),
+  steps: z
+    .array(AdvancedPlanStepSchema)
+    .min(1, "Plan must have at least 1 step")
+    .max(10, "Plan cannot exceed 10 steps"),
+});
+
+export type AdvancedAgentPlanDTO = z.infer<typeof AdvancedAgentPlanSchema>;
+
+/**
+ * Phase 15 — Structured Decision Schema
+ */
+export const AgentDecisionSchema = z.object({
+  type: z.enum(["CONTINUE", "CALL_TOOL", "COMPLETE", "FAIL"]),
+  reasoningSummary: z.string().min(1, "Reasoning summary cannot be empty").max(1500),
+  toolCall: z
+    .object({
+      tool: z.string().min(1),
+      arguments: z.record(z.string(), z.unknown()).default({}),
+    })
+    .optional(),
+  finalAnswer: z.string().max(10000).optional(),
+  failureReason: z.string().max(2000).optional(),
+});
+
+export type AgentDecisionDTO = z.infer<typeof AgentDecisionSchema>;
+
+/**
+ * Phase 15 — Grounded Final Synthesis Result Schema
+ */
+export const AgentFinalSynthesisSchema = z.object({
+  summary: z.string().min(5).max(5000),
+  findings: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(255),
+        value: z.string().min(1).max(2000),
+      })
+    )
+    .default([]),
+  sources: z.array(z.string()).default([]),
+  confidence: z.number().min(0).max(1).default(0.9),
+});
+
+export type AgentFinalSynthesisDTO = z.infer<typeof AgentFinalSynthesisSchema>;
+
+/**
+ * Zod Schema for the complete Agent Execution Plan (Phase 7 backward-compatible).
  * The model proposes this structure; the application validates it before persisting steps.
  */
 export const AgentPlanSchema = z.object({
@@ -113,6 +179,7 @@ export interface AgentExecutionResponse {
   plan: AgentPlan | null;
   steps: AgentTaskStepEntity[];
   finalAnswer?: string | null;
+  result?: string | null;
   toolExecutions?: Array<{
     id: string;
     tool: string;

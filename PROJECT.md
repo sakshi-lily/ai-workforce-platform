@@ -1,23 +1,36 @@
 # AI Workforce Platform
 
-## Current Status: Phase 13 — Authentication (COMPLETED ✅)
+## Current Status: Phase 15 — Advanced Agent Architecture (COMPLETED ✅)
 
 ### Project Status
 
-**Current Phase:** Phase 13 — Authentication  
-**Stage:** Phase 13 Completed & Verified (Ready for Phase 14: Task Management)  
+**Current Phase:** Phase 15 — Advanced Agent Architecture  
+**Stage:** Phase 15 Completed & Verified (Ready for Phase 16: Gmail Automation)  
 **Developer:** Sakshi
 
-### Phase 13 Deliverables Summary
-- [x] **Authoritative User Identity:** `users` table supporting normalized emails, secure bcrypt password hashing, and tenant association.
-- [x] **Server-Validated JWT:** Cryptographic token issuance (`/api/auth/register`, `/api/auth/login`) and session validation (`/api/auth/me`).
-- [x] **Centralized Express Middleware:** `requireAuth` extracts Bearer tokens, loads authoritative identity, and attaches `req.user`, `req.userId`, `req.organizationId`.
-- [x] **Host-Controlled Execution Context:** Agent execution, tool registry, MySQL customer lookups, and Qdrant/RAG strictly inherit server-derived identity.
-- [x] **Anti-Spoofing & Anti-IDOR:** Client-sent `userId` or `organizationId` in request bodies are ignored. Cross-tenant access attempts are rejected.
-- [x] **Redis Tenant Partitioning:** Namespaced cache keys (`customers:<orgId>:*`) eliminate cross-tenant cache contamination.
-- [x] **Audit Trail Persistence:** Authentication events (`USER_REGISTERED`, `USER_LOGIN_SUCCESS`, `USER_LOGIN_FAILED`) logged with actor and tenant IDs.
-- [x] **React Client Authentication:** `AuthProvider`, `useAuth`, `authFetch`, login/register forms, quick tenant switching, and seamless session restoration.
-- [x] **Comprehensive Test Suite:** 26/26 tests passed (documented in `PHASE_13.md`).
+### Phase 14 Deliverables Summary (Task Management)
+- [x] **Durable Task Lifecycle:** Authoritative state machine (`REQUESTED` → `RUNNING` → `COMPLETED` / `FAILED` / `CANCELLED`).
+- [x] **Relational Persistence:** Durable tasks, ordered task steps, and tool executions stored in MySQL with tenant scoping (`organization_id`).
+- [x] **Anti-IDOR Security:** Strict tenancy verification returning 404 for cross-tenant resource requests.
+- [x] **Conflict Guards:** 409 Conflict protection against duplicate execution of running tasks or modifying terminal tasks.
+- [x] **Auditing & Telemetry:** Full audit logs for task transitions and token/cost telemetry tracking.
+- [x] **Comprehensive Test Suite:** 29/29 tests passed (documented in `PHASE_14.md`).
+
+### Phase 15 Deliverables Summary (Advanced Agent Architecture)
+- [x] **Authoritative Architectural Boundary:** Enforced *"The LLM proposes. The Agent Host decides. The application executes."* The LLM never owns state transitions, tenant identity, or tool permissions.
+- [x] **Structured DAG Planning:** Strongly typed `AgentPlan` schema with explicit inter-step dependencies (`dependencies[]`) and per-step tool allowlists (`allowedTools[]`).
+- [x] **Authoritative DAG Validation & Cycle Detection:** Graph traversal with 3-color DFS detecting duplicate IDs, self-dependencies, unknown dependencies, and circular references.
+- [x] **Deterministic Step Scheduler:** Authoritative `findNextRunnableStep` selecting the lowest-order runnable step whose prerequisite steps are strictly `COMPLETED`.
+- [x] **Strict Decision Contract:** Strongly validated `AgentDecision` schema (`CALL_TOOL`, `CONTINUE`, `COMPLETE`, `FAIL`) parsing through Zod with JSON repair.
+- [x] **Centralized Policy Gateway:** Blocks prohibited tools (`execute_sql`, `shell_exec`, `gmail_send`), enforces risk levels (`READ_ONLY`, `LOW_RISK` vs blocked mutations), and guarantees tenant scoping.
+- [x] **Bounded Context Manager:** Strict token/character memory budget with explicit untrusted observation delimiters (`<<<UNTRUSTED_EXTERNAL_OBSERVATION>>>`) to defeat prompt injection.
+- [x] **Deterministic Execution Watchdogs:** Guard limits for max cycles (15), max tool calls (20), step retries (2), replans (2), wall-clock time (180s), and cryptographic SHA-256 loop detection.
+- [x] **Bounded Retries & Replanning:** Structured failure taxonomy (`PROVIDER_ERROR`, `TIMEOUT_ERROR`, `POLICY_ERROR`) allowing recovery on transient errors and bounded replanning (`MAX_REPLANS = 2`).
+- [x] **Cooperative Cancellation Checkpoints:** Non-destructive cancellation checks prior to and after LLM invocations and tool calls.
+- [x] **Multi-Source Grounded Synthesis:** Authoritative final report synthesis validating evidence against real tool observations (`Customer Database (MySQL)`, `Web Search`, `Internal Knowledge Base (Qdrant)`).
+- [x] **Advanced Execution Studio UI:** Interactive DAG plan progress bar, step dependency indicators, status icons, and governed tool tags.
+- [x] **Exhaustive Automated Test Suite:** 22/22 unit, integration, security, and reliability tests passed (documented in `PHASE_15.md`).
+- [x] **Full Regression Pass:** 100% pass across Phase 13 (26/26), Phase 14 (29/29), and Phase 15 (22/22) suites with clean production builds.
 
 ---
 

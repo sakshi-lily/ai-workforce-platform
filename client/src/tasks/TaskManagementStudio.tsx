@@ -25,6 +25,7 @@ export interface TaskStep {
   description: string;
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'SKIPPED';
   tool_name: string | null;
+  dependencies?: string[];
   input_data: Record<string, unknown> | null;
   output_data: Record<string, unknown> | null;
   error_message: string | null;
@@ -848,51 +849,128 @@ export const TaskManagementStudio: React.FC = () => {
                 </div>
               )}
 
-              {/* Task Steps Sequence */}
-              <div className="space-y-2">
+              {/* Task Steps Sequence & DAG Dependency Graph */}
+              <div className="space-y-3">
                 <div className="flex items-center justify-between text-xs text-slate-400">
-                  <span className="font-semibold text-slate-300">
-                    Execution Steps ({taskDetails.steps.length})
-                  </span>
-                  <span className="text-[10px] font-mono text-slate-500">Durable MySQL `task_steps`</span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-slate-300">
+                      Execution Plan ({taskDetails.steps.length} Steps)
+                    </span>
+                    {taskDetails.steps.length > 0 && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-950 text-indigo-300 border border-indigo-800">
+                        {taskDetails.steps.filter((s) => s.status === 'COMPLETED').length} / {taskDetails.steps.length} completed
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-500">DAG Step Scheduler</span>
                 </div>
 
-                <div className="space-y-2">
-                  {taskDetails.steps.map((step) => (
+                {/* Progress bar */}
+                {taskDetails.steps.length > 0 && (
+                  <div className="w-full bg-slate-950 rounded-full h-1.5 overflow-hidden border border-slate-800">
                     <div
-                      key={step.id}
-                      className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-2.5">
-                          <span className="px-2 py-0.5 rounded font-mono text-xs font-bold bg-cyan-950 border border-cyan-800 text-cyan-300 shrink-0">
-                            #{step.step_order}
-                          </span>
-                          <div>
-                            <h5 className="text-xs font-semibold text-white">{step.title}</h5>
-                            <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{step.description}</p>
-                          </div>
-                        </div>
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold shrink-0 ${
-                            step.status === 'COMPLETED'
-                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/60'
-                              : step.status === 'FAILED'
-                              ? 'bg-rose-950 text-rose-300 border border-rose-800/60'
-                              : 'bg-slate-900 text-amber-300 border border-slate-800'
-                          }`}
-                        >
-                          {step.status}
-                        </span>
-                      </div>
+                      className="bg-gradient-to-r from-indigo-500 to-cyan-400 h-1.5 transition-all duration-500"
+                      style={{
+                        width: `${Math.round(
+                          (taskDetails.steps.filter((s) => s.status === 'COMPLETED').length /
+                            taskDetails.steps.length) *
+                            100
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                )}
 
-                      {step.tool_name && (
-                        <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-900">
-                          <span>Tool: <strong className="text-cyan-300">{step.tool_name}</strong></span>
+                <div className="space-y-2.5">
+                  {taskDetails.steps.map((step) => {
+                    const isCompleted = step.status === 'COMPLETED';
+                    const isFailed = step.status === 'FAILED';
+                    const isRunning = step.status === 'IN_PROGRESS';
+
+                    return (
+                      <div
+                        key={step.id}
+                        className={`p-3.5 rounded-xl border transition-all space-y-2.5 ${
+                          isCompleted
+                            ? 'bg-slate-950/80 border-slate-800/80 hover:border-slate-700'
+                            : isRunning
+                            ? 'bg-indigo-950/40 border-indigo-500/80 shadow-lg shadow-indigo-950/40'
+                            : isFailed
+                            ? 'bg-rose-950/30 border-rose-900/60'
+                            : 'bg-slate-950/60 border-slate-900 opacity-80'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-2.5">
+                            <span
+                              className={`px-2 py-0.5 rounded font-mono text-xs font-bold shrink-0 ${
+                                isCompleted
+                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                                  : isRunning
+                                  ? 'bg-indigo-950 text-indigo-300 border border-indigo-700 animate-pulse'
+                                  : isFailed
+                                  ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                                  : 'bg-slate-900 text-slate-400 border border-slate-800'
+                              }`}
+                            >
+                              #{step.step_order}
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs">
+                                  {isCompleted ? '✓' : isRunning ? '●' : isFailed ? '✗' : '○'}
+                                </span>
+                                <h5 className="text-xs font-semibold text-white">{step.title}</h5>
+                              </div>
+                              <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{step.description}</p>
+                            </div>
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold shrink-0 ${
+                              isCompleted
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/60'
+                                : isFailed
+                                ? 'bg-rose-950 text-rose-300 border border-rose-800/60'
+                                : isRunning
+                                ? 'bg-indigo-950 text-indigo-300 border border-indigo-700'
+                                : 'bg-slate-900 text-slate-400 border border-slate-800'
+                            }`}
+                          >
+                            {step.status}
+                          </span>
                         </div>
-                      )}
-                    </div>
-                  ))}
+
+                        {/* DAG Dependencies & Governed Tool Chip */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono pt-1.5 border-t border-slate-900/80">
+                          <div className="flex items-center gap-2">
+                            {step.dependencies && step.dependencies.length > 0 ? (
+                              <span className="flex items-center gap-1 text-indigo-300 bg-indigo-950/60 border border-indigo-900/50 px-2 py-0.5 rounded">
+                                <span>↳ Depends on:</span>
+                                <strong className="text-cyan-300">{step.dependencies.join(', ')}</strong>
+                              </span>
+                            ) : (
+                              <span className="text-slate-500">Root step (initial)</span>
+                            )}
+                          </div>
+
+                          {step.tool_name && (
+                            <div className="flex items-center gap-1.5 text-slate-400">
+                              <span>Tool:</span>
+                              <span className="px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/50 text-cyan-300 font-bold">
+                                {step.tool_name}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {step.error_message && (
+                          <div className="p-2 rounded bg-rose-950/40 border border-rose-900 text-rose-300 text-[10px] font-mono">
+                            Error: {step.error_message}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
 
                   {taskDetails.steps.length === 0 && (
                     <div className="p-4 rounded-xl border border-dashed border-slate-800 text-center text-slate-500 text-xs">

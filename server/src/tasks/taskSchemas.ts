@@ -17,7 +17,7 @@ export const CreateTaskInputSchema = z
     path: ["goal"],
   });
 
-export type CreateTaskInput = z.infer<typeof CreateTaskInputSchema>;
+export type CreateTaskInput = z.input<typeof CreateTaskInputSchema>;
 export const CreateTaskSchema = CreateTaskInputSchema;
 
 /**

@@ -121,6 +121,7 @@ The central operational entity representing a durable unit of AI work.
 
 ### 2.3 `task_steps`
 Represents individual subtasks and execution milestones. Maintains deterministic execution sequence (`step_order`), tool references, inputs/outputs, and step status (`PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, `SKIPPED`).
+- In Phase 15, `input_data` stores DAG execution metadata: `{ "dependencies": string[], "allowedTools": string[], "description": string }` to power the deterministic step scheduler and UI dependency visualization.
 
 ### 2.4 `customers`
 The operational CRM dataset. Scoped strictly to `organization_id` with composite uniqueness on `(user_id, domain)` to prevent cross-tenant leakage.
@@ -133,4 +134,7 @@ Stateful Human-in-the-Loop staging table. Holds proposed mutations (e.g., email 
 
 ### 2.7 `audit_logs`
 Immutable compliance and security record tracking sensitive authentication and task lifecycle events (`USER_REGISTERED`, `USER_LOGIN_SUCCESS`, `TASK_CREATED`, `TASK_STARTED`, `TASK_COMPLETED`, `TASK_FAILED`, `TASK_CANCELLED`, `TASK_UPDATED`), action, actor `user_id`, and `organization_id`.
+
+### 2.8 `ai_telemetry`
+Records granular LLM token usage, duration, model identifiers, and dollar cost for every task execution run (`task_id`, `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `latency_ms`, `estimated_cost_usd`, `created_at`).
 

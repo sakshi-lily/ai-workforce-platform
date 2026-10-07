@@ -529,9 +529,192 @@ export async function executeChatStep(
   // Scenario C: Structured Plan or standard text response
   let simulatedContent = "";
   if (options.responseFormat === "json_object") {
-    const isPlanningPrompt = promptText.toLowerCase().includes("plan") || promptText.toLowerCase().includes("goal") || promptText.toLowerCase().includes("steps");
+    const lowerPrompt = promptText.toLowerCase();
 
-    if (isPlanningPrompt) {
+    // 1. Final Synthesis Engine (AgentFinalSynthesisSchema)
+    if (
+      lowerPrompt.includes("final synthesis engine") ||
+      lowerPrompt.includes("produce an authoritative, verified final report")
+    ) {
+      if (lowerPrompt.includes("time") || lowerPrompt.includes("calculate") || lowerPrompt.includes("clock")) {
+        simulatedContent = JSON.stringify({
+          summary: "Current time and arithmetic calculation verified successfully.",
+          findings: [
+            { title: "Current Time", value: "Verified server timestamp in requested timezone." },
+            { title: "Calculation", value: "Expression evaluated successfully to 1000." },
+          ],
+          sources: ["Authoritative Server Clock", "Local Arithmetic Evaluator"],
+          confidence: 0.99,
+        });
+      } else {
+        simulatedContent = JSON.stringify({
+          summary: "Apex Cloud is an existing customer verified in our internal MySQL database and supported by public web intelligence and internal knowledge documentation.",
+          findings: [
+            { title: "Customer Verification", value: "Verified active enterprise customer in MySQL CRM database." },
+            { title: "External Footprint", value: "Cloud infrastructure and AI solutions provider." },
+            { title: "Internal Knowledge", value: "Active SLA contract and master service agreement retrieved." },
+          ],
+          sources: [
+            "Customer Database (MySQL)",
+            "Web Search",
+            "Internal Knowledge Base (Qdrant)",
+          ],
+          confidence: 0.94,
+        });
+      }
+    }
+    // 2. Structured Decision Engine (AgentDecisionSchema)
+    else if (
+      lowerPrompt.includes("execution decision engine") ||
+      lowerPrompt.includes("current active step to execute:")
+    ) {
+      // Extract permitted tools specifically from the active step block:
+      // "- Permitted Tools for this step: [tool1, tool2]"
+      const permittedMatch = promptText.match(/Permitted Tools for this step:\s*\[(.*?)\]/i);
+      const permittedToolsStr = permittedMatch ? permittedMatch[1].toLowerCase() : "";
+
+      const activeHeaderMatch = promptText.match(/Step ID:\s*([a-zA-Z0-9_-]+)/i);
+      const activeStepId = activeHeaderMatch ? activeHeaderMatch[1].toLowerCase() : "";
+
+      if (permittedToolsStr.includes("rag_query") || activeStepId.includes("rag")) {
+        simulatedContent = JSON.stringify({
+          type: "CALL_TOOL",
+          reasoningSummary: "Querying internal knowledge repository via RAG.",
+          toolCall: {
+            tool: "rag_query",
+            arguments: { question: "Apex Cloud contract terms and SLA notes" },
+          },
+        });
+      } else if (permittedToolsStr.includes("mysql_verify_customer") || activeStepId.includes("verify")) {
+        simulatedContent = JSON.stringify({
+          type: "CALL_TOOL",
+          reasoningSummary: "Verifying customer records in internal MySQL CRM database.",
+          toolCall: {
+            tool: "mysql_verify_customer",
+            arguments: { customerName: "Apex Cloud", email: "sarah@apexcloud.io" },
+          },
+        });
+      } else if (permittedToolsStr.includes("web_search") || activeStepId.includes("web")) {
+        simulatedContent = JSON.stringify({
+          type: "CALL_TOOL",
+          reasoningSummary: "Searching web for external company intelligence.",
+          toolCall: {
+            tool: "web_search",
+            arguments: { query: "Apex Cloud products and overview" },
+          },
+        });
+      } else if (permittedToolsStr.includes("get_current_time") || activeStepId.includes("time")) {
+        const tzMatch = promptText.match(/(?:in\s+)([A-Za-z_/]+)/i);
+        const timezone = tzMatch ? tzMatch[1] : "America/New_York";
+        simulatedContent = JSON.stringify({
+          type: "CALL_TOOL",
+          reasoningSummary: "Checking authoritative system clock for requested timezone.",
+          toolCall: { tool: "get_current_time", arguments: { timezone } },
+        });
+      } else if (permittedToolsStr.includes("calculate") || activeStepId.includes("calc")) {
+        const calcMatch = promptText.match(/(\d+\s*[\+\-\*\/]\s*\d+)/);
+        const expression = calcMatch ? calcMatch[1] : "50 * 20";
+        simulatedContent = JSON.stringify({
+          type: "CALL_TOOL",
+          reasoningSummary: "Evaluating numerical expression.",
+          toolCall: { tool: "calculate", arguments: { expression } },
+        });
+      } else {
+        simulatedContent = JSON.stringify({
+          type: "CONTINUE",
+          reasoningSummary: "Step requirements satisfied from observation evidence.",
+        });
+      }
+    }
+    // 3. Replanning Engine (AdvancedAgentPlanSchema replan mode)
+    else if (
+      lowerPrompt.includes("replan") ||
+      lowerPrompt.includes("execution obstacle") ||
+      lowerPrompt.includes("remaining work to reach the original goal")
+    ) {
+      simulatedContent = JSON.stringify({
+        goal: "Investigate company",
+        summary: "Bounded replanned alternative discovery strategy",
+        steps: [
+          {
+            id: "step_replan_1",
+            order: 2,
+            title: "Search Alternative Business Registry",
+            description: "Query secondary public directory for corporate records",
+            dependencies: ["step_1"],
+            allowedTools: ["web_search"],
+          },
+        ],
+      });
+    }
+    // 4. DAG Planning Engine (AdvancedAgentPlanSchema)
+    else if (
+      lowerPrompt.includes("lead planning engine") ||
+      lowerPrompt.includes("dag execution plan") ||
+      lowerPrompt.includes("dag rules")
+    ) {
+      if (lowerPrompt.includes("time") || lowerPrompt.includes("calculate") || lowerPrompt.includes("clock")) {
+        simulatedContent = JSON.stringify({
+          goal: "Time and calculation verification",
+          summary: "Check current time and evaluate calculation",
+          steps: [
+            {
+              id: "step_time",
+              order: 1,
+              title: "Check System Time",
+              description: "Determine current time in requested timezone",
+              dependencies: [],
+              allowedTools: ["get_current_time"],
+            },
+            {
+              id: "step_calc",
+              order: 2,
+              title: "Perform Calculation",
+              description: "Compute arithmetic expression",
+              dependencies: ["step_time"],
+              allowedTools: ["calculate"],
+            },
+          ],
+        });
+      } else {
+        simulatedContent = JSON.stringify({
+          goal: "Research and verify Apex Cloud",
+          summary: "Structured multi-step verification and profiling pipeline",
+          steps: [
+            {
+              id: "step_1",
+              order: 1,
+              title: "Web Discovery",
+              description: "Search web for external footprint and company profile",
+              dependencies: [],
+              allowedTools: ["web_search"],
+            },
+            {
+              id: "step_2",
+              order: 2,
+              title: "Customer Database Verification",
+              description: "Check internal MySQL customer table for Apex Cloud",
+              dependencies: ["step_1"],
+              allowedTools: ["mysql_verify_customer"],
+            },
+            {
+              id: "step_3",
+              order: 3,
+              title: "Internal Knowledge Retrieval",
+              description: "Search company knowledge documents for Apex Cloud",
+              dependencies: ["step_2"],
+              allowedTools: ["rag_query"],
+            },
+          ],
+        });
+      }
+    }
+    // 5. Legacy Task Planning (Phase 7/14 simple plans)
+    else if (
+      lowerPrompt.includes("plan") ||
+      lowerPrompt.includes("goal") ||
+      lowerPrompt.includes("steps")
+    ) {
       simulatedContent = JSON.stringify({
         goal: "Identify and qualify potential customers for the AI automation product.",
         summary: "The task requires establishing an Ideal Customer Profile (ICP), identifying target vertical sectors, extracting candidate companies, and qualifying leads prior to outreach.",
@@ -558,7 +741,9 @@ export async function executeChatStep(
           },
         ],
       });
-    } else {
+    }
+    // 6. Generic Text Analysis Fallback
+    else {
       simulatedContent = JSON.stringify({
         summary: "Redis acts as an ultra-fast temporary caching tier, while MySQL remains the durable source of truth with relational integrity and transactional consistency.",
         topics: ["Redis Caching", "MySQL Durability", "System Architecture", "Reliability"],
