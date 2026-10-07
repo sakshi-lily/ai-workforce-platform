@@ -532,4 +532,30 @@ Phase 15 defines formal schema contracts governing LLM planning, decision making
   }
   ```
 
+---
 
+## 4. Gmail Integration Endpoints & Tools (Phase 16)
+
+### 4.1 Gmail HTTP Endpoints (`/api/integrations/gmail`)
+All endpoints mandate `Authorization: Bearer <JWT>`.
+
+- **`GET /api/integrations/gmail/status`**
+  - Returns connection status for authenticated user (`CONNECTED` or `DISCONNECTED`), account email, and provider. Zero secret tokens returned.
+- **`GET /api/integrations/gmail/connect`**
+  - Generates HMAC-SHA256 signed `state` and returns Google OAuth authorization URL.
+- **`GET /api/integrations/gmail/callback`**
+  - Validates `state` signature, user identity, and organization context. Exchanges code for tokens, encrypts at rest with AES-256-GCM, and updates database.
+- **`POST /api/integrations/gmail/disconnect`**
+  - Sets connection status to `DISCONNECTED` without deleting historical audit trails or tasks.
+- **`POST /api/integrations/gmail/connect-mock`**
+  - Connects simulated Gmail account for sandbox development and test automation.
+
+### 4.2 Gmail Governed Tools
+
+| Tool Name | Risk Level | Inputs | Output Summary |
+| :--- | :--- | :--- | :--- |
+| `gmail_get_profile` | `READ_ONLY` | `{}` | `{ email, messagesTotal, threadsTotal }` |
+| `gmail_search` | `READ_ONLY` | `{ query: string, maxResults?: number }` | `{ summaries: [{ messageId, threadId, from, to, subject, snippet, receivedAt }], count }` |
+| `gmail_get_message` | `READ_ONLY` | `{ messageId: string }` | `{ messageId, threadId, from, to, subject, snippet, plainTextBody, hasAttachments, receivedAt }` |
+| `gmail_create_draft` | `MUTATING` | `{ to: string[], subject: string, body: string, threadId?: string }` | `{ draftId, messageId, status: "DRAFT_CREATED", to, subject, snippet }` |
+| `gmail_send` | `EXTERNAL_SIDE_EFFECT` | `{ to: string[], subject: string, body: string, reason?: string }` | `{ status: "APPROVAL_REQUIRED", approvalId, message: "External side effect staged for Phase 17 Human Approval" }` |

@@ -956,8 +956,16 @@ export const TaskManagementStudio: React.FC = () => {
                           {step.tool_name && (
                             <div className="flex items-center gap-1.5 text-slate-400">
                               <span>Tool:</span>
-                              <span className="px-1.5 py-0.5 rounded bg-cyan-950/60 border border-cyan-800/50 text-cyan-300 font-bold">
-                                {step.tool_name}
+                              <span
+                                className={`px-1.5 py-0.5 rounded font-bold ${
+                                  step.tool_name === 'gmail_send'
+                                    ? 'bg-amber-950/80 border border-amber-700 text-amber-300'
+                                    : step.tool_name.startsWith('gmail_')
+                                    ? 'bg-red-950/60 border border-red-800/60 text-red-300'
+                                    : 'bg-cyan-950/60 border border-cyan-800/50 text-cyan-300'
+                                }`}
+                              >
+                                {step.tool_name === 'gmail_send' ? '⏸ gmail_send (approval required)' : step.tool_name}
                               </span>
                             </div>
                           )}
@@ -1020,6 +1028,95 @@ export const TaskManagementStudio: React.FC = () => {
                             {JSON.stringify(exec.result, null, 2)}
                           </pre>
                         </details>
+
+                        {/* Phase 16: Email Draft Preview */}
+                        {exec.tool === 'gmail_create_draft' && (
+                          <div className="mt-2.5 p-3 rounded-lg bg-slate-900/90 border border-slate-700/80 font-sans space-y-2">
+                            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                              <span className="text-[10px] font-mono uppercase text-slate-400 font-bold">
+                                Email Draft Preview
+                              </span>
+                              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-950 text-amber-300 border border-amber-800">
+                                DRAFT CREATED — NOT SENT
+                              </span>
+                            </div>
+                            <div className="text-[11px] space-y-1">
+                              <div>
+                                <strong className="text-slate-400">To:</strong>{' '}
+                                <span className="font-mono text-cyan-300">
+                                  {Array.isArray((exec.arguments as any)?.to)
+                                    ? (exec.arguments as any).to.join(', ')
+                                    : String((exec.arguments as any)?.to || '')}
+                                </span>
+                              </div>
+                              <div>
+                                <strong className="text-slate-400">Subject:</strong>{' '}
+                                <span className="text-white font-medium">
+                                  {String((exec.arguments as any)?.subject || '')}
+                                </span>
+                              </div>
+                              <div className="pt-1 border-t border-slate-800/80">
+                                <span className="text-[10px] uppercase font-mono text-slate-500 block mb-0.5">
+                                  Body
+                                </span>
+                                <div className="p-2 rounded bg-slate-950 border border-slate-800 text-slate-200 text-[11px] font-sans whitespace-pre-wrap max-h-36 overflow-y-auto">
+                                  {String((exec.arguments as any)?.body || '')}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Phase 16: Send Approval Preview (Phase 17 Preparation) */}
+                        {(exec.tool === 'gmail_send' || (exec.result as any)?.status === 'APPROVAL_REQUIRED') && (
+                          <div className="mt-2.5 p-3 rounded-lg bg-amber-950/20 border border-amber-800/60 font-sans space-y-2">
+                            <div className="flex items-center justify-between border-b border-amber-800/40 pb-1.5">
+                              <span className="text-[10px] font-mono uppercase text-amber-400 font-bold">
+                                External Action Requested
+                              </span>
+                              <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+                                ⏸ APPROVAL REQUIRED
+                              </span>
+                            </div>
+                            <div className="text-[11px] space-y-1">
+                              <div>
+                                <strong className="text-slate-400">Tool:</strong>{' '}
+                                <span className="font-mono text-amber-300">gmail_send</span>
+                              </div>
+                              <div>
+                                <strong className="text-slate-400">To:</strong>{' '}
+                                <span className="font-mono text-cyan-300">
+                                  {Array.isArray((exec.arguments as any)?.to)
+                                    ? (exec.arguments as any).to.join(', ')
+                                    : String((exec.arguments as any)?.to || '')}
+                                </span>
+                              </div>
+                              <div>
+                                <strong className="text-slate-400">Subject:</strong>{' '}
+                                <span className="text-white font-medium">
+                                  {String((exec.arguments as any)?.subject || '')}
+                                </span>
+                              </div>
+                              <div>
+                                <strong className="text-slate-400">Risk Level:</strong>{' '}
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-rose-950 text-rose-300 border border-rose-800">
+                                  EXTERNAL_SIDE_EFFECT
+                                </span>
+                              </div>
+                              {((exec.result as any)?.approvalId || (exec.result as any)?.details?.approvalId) && (
+                                <div>
+                                  <strong className="text-slate-400">Approval ID:</strong>{' '}
+                                  <span className="font-mono text-xs text-indigo-300">
+                                    {(exec.result as any)?.approvalId || (exec.result as any)?.details?.approvalId}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-amber-400/90 bg-amber-950/40 p-2 rounded border border-amber-900/60">
+                              🛡️ Staged for Phase 17 Human Approval. No email was sent externally.
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

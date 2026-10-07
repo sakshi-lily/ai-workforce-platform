@@ -6,6 +6,11 @@ import { webSearchTool } from "./implementations/webSearch";
 import { mysqlVerifyCustomerTool } from "./implementations/mysqlVerifyCustomer";
 import { vectorSearchTool } from "./implementations/vectorSearch";
 import { ragQueryTool } from "./implementations/ragQuery";
+import { gmailGetProfileTool } from "./implementations/gmailGetProfile";
+import { gmailSearchTool } from "./implementations/gmailSearch";
+import { gmailGetMessageTool } from "./implementations/gmailGetMessage";
+import { gmailCreateDraftTool } from "./implementations/gmailCreateDraft";
+import { gmailSendTool } from "./implementations/gmailSend";
 
 export class ToolRegistry {
   private tools: Map<string, Tool> = new Map();
@@ -18,6 +23,13 @@ export class ToolRegistry {
     this.registerTool(mysqlVerifyCustomerTool);
     this.registerTool(vectorSearchTool);
     this.registerTool(ragQueryTool);
+
+    // Register Phase 16 Gmail tools
+    this.registerTool(gmailGetProfileTool);
+    this.registerTool(gmailSearchTool);
+    this.registerTool(gmailGetMessageTool);
+    this.registerTool(gmailCreateDraftTool);
+    this.registerTool(gmailSendTool);
   }
 
   /**
@@ -139,6 +151,66 @@ export class ToolRegistry {
           },
         };
         required = ["question"];
+      } else if (t.name === "gmail_get_profile") {
+        properties = {};
+      } else if (t.name === "gmail_search") {
+        properties = {
+          query: {
+            type: "string",
+            description: "Search query or sender, e.g. 'from:customer@example.com' or 'Apex Cloud'",
+          },
+          maxResults: {
+            type: "integer",
+            description: "Maximum number of messages to return (1-10)",
+            default: 5,
+          },
+        };
+      } else if (t.name === "gmail_get_message") {
+        properties = {
+          messageId: {
+            type: "string",
+            description: "Exact ID of the message to retrieve",
+          },
+        };
+        required = ["messageId"];
+      } else if (t.name === "gmail_create_draft") {
+        properties = {
+          to: {
+            type: "array",
+            items: { type: "string" },
+            description: "Recipient email address list",
+          },
+          subject: {
+            type: "string",
+            description: "Email subject line",
+          },
+          body: {
+            type: "string",
+            description: "Draft body text",
+          },
+        };
+        required = ["to", "subject", "body"];
+      } else if (t.name === "gmail_send") {
+        properties = {
+          to: {
+            type: "array",
+            items: { type: "string" },
+            description: "Recipient email address list",
+          },
+          subject: {
+            type: "string",
+            description: "Email subject line",
+          },
+          body: {
+            type: "string",
+            description: "Message body text",
+          },
+          reason: {
+            type: "string",
+            description: "Reasoning for sending email externally",
+          },
+        };
+        required = ["to", "subject", "body"];
       }
 
       return {

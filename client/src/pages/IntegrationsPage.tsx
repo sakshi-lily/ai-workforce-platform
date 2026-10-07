@@ -28,6 +28,73 @@ export const IntegrationsPage: React.FC = () => {
   const [newIndustry, setNewIndustry] = useState('');
   const [createMsg, setCreateMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Phase 16: Gmail Connection State
+  const [gmailStatus, setGmailStatus] = useState<{
+    connected: boolean;
+    email?: string;
+    status: string;
+    connectedAt?: string;
+    scopes?: string[];
+  }>({ connected: false, status: 'DISCONNECTED' });
+  const [gmailLoading, setGmailLoading] = useState(false);
+  const [gmailActionMsg, setGmailActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const fetchGmailStatus = async () => {
+    try {
+      const res = await authFetch('http://localhost:3000/api/integrations/gmail/status');
+      if (res.ok) {
+        const json = await res.json();
+        setGmailStatus({
+          connected: json.connected,
+          email: json.email,
+          status: json.status,
+          connectedAt: json.connectedAt,
+          scopes: json.scopes,
+        });
+      }
+    } catch {
+      // Non-blocking
+    }
+  };
+
+  const handleConnectMockGmail = async () => {
+    setGmailLoading(true);
+    setGmailActionMsg(null);
+    try {
+      const res = await authFetch('http://localhost:3000/api/integrations/gmail/mock/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'user@example.com' }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error?.message || json.message || 'Failed to connect mock Gmail');
+      setGmailActionMsg({ type: 'success', text: `Gmail account '${json.email}' successfully connected!` });
+      await fetchGmailStatus();
+    } catch (err: any) {
+      setGmailActionMsg({ type: 'error', text: err.message || 'Failed to connect Gmail.' });
+    } finally {
+      setGmailLoading(false);
+    }
+  };
+
+  const handleDisconnectGmail = async () => {
+    setGmailLoading(true);
+    setGmailActionMsg(null);
+    try {
+      const res = await authFetch('http://localhost:3000/api/integrations/gmail/disconnect', {
+        method: 'POST',
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error?.message || json.message || 'Failed to disconnect');
+      setGmailActionMsg({ type: 'success', text: 'Gmail account disconnected successfully.' });
+      await fetchGmailStatus();
+    } catch (err: any) {
+      setGmailActionMsg({ type: 'error', text: err.message || 'Failed to disconnect.' });
+    } finally {
+      setGmailLoading(false);
+    }
+  };
+
   const fetchCustomers = async () => {
     setLoading(true);
     try {
@@ -45,6 +112,7 @@ export const IntegrationsPage: React.FC = () => {
 
   useEffect(() => {
     fetchCustomers();
+    fetchGmailStatus();
   }, []);
 
   const handleDomainSearch = async (e: React.FormEvent) => {
@@ -122,8 +190,106 @@ export const IntegrationsPage: React.FC = () => {
           Data & Integrations Directory
         </h1>
         <p className="mt-1 text-sm text-slate-400 font-sans">
-          Tenant-isolated customer records with Redis tiered caching and verified parameterized queries.
+          Tenant-isolated customer records with Redis tiered caching, verified parameterized queries, and Phase 16 Gmail Automation.
         </p>
+      </div>
+
+      {/* Phase 16: Gmail Integration Card */}
+      <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 backdrop-blur-sm shadow-xl space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-red-950/80 border border-red-800/80 flex items-center justify-center text-red-400 font-bold text-base shadow-inner">
+              ✉
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-white font-sans">
+                Gmail Automation Integration
+              </h2>
+              <p className="text-[11px] text-slate-400 font-sans">
+                Phase 16 Delegated OAuth 2.0 Account Connection & Governed Email Tools
+              </p>
+            </div>
+          </div>
+          <span
+            className={`px-3 py-1 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider ${
+              gmailStatus.connected
+                ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                : 'bg-slate-950 text-slate-400 border border-slate-800'
+            }`}
+          >
+            {gmailStatus.connected ? '● CONNECTED' : '○ NOT CONNECTED'}
+          </span>
+        </div>
+
+        {gmailActionMsg && (
+          <div
+            className={`p-3 rounded-lg text-xs font-sans ${
+              gmailActionMsg.type === 'success'
+                ? 'bg-emerald-950/60 border border-emerald-800 text-emerald-300'
+                : 'bg-rose-950/60 border border-rose-800 text-rose-300'
+            }`}
+          >
+            {gmailActionMsg.text}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-sans">
+          <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+            <span className="text-[10px] uppercase font-mono text-slate-500">Connected Account</span>
+            <div className="font-mono text-cyan-300 text-xs truncate">
+              {gmailStatus.connected ? gmailStatus.email : 'None'}
+            </div>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+            <span className="text-[10px] uppercase font-mono text-slate-500">Security & Encryption</span>
+            <div className="text-emerald-400 font-medium text-xs">
+              AES-256-GCM Encrypted at Rest
+            </div>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+            <span className="text-[10px] uppercase font-mono text-slate-500">Send Policy Boundary</span>
+            <div className="text-amber-400 font-medium text-xs">
+              Approval Required (Phase 17)
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+          <div className="text-[11px] text-slate-500 font-sans">
+            Reading & Drafting are governed server-side. Sending is halted at human approval boundary.
+          </div>
+          <div className="flex items-center gap-2">
+            {gmailStatus.connected ? (
+              <button
+                type="button"
+                disabled={gmailLoading}
+                onClick={handleDisconnectGmail}
+                className="px-4 py-2 rounded-xl bg-rose-950/80 hover:bg-rose-900 border border-rose-800 text-rose-200 text-xs font-semibold font-sans transition disabled:opacity-50 cursor-pointer"
+              >
+                {gmailLoading ? 'Disconnecting...' : 'Disconnect Gmail'}
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={gmailLoading}
+                  onClick={handleConnectMockGmail}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 text-white text-xs font-semibold font-sans shadow-md transition disabled:opacity-50 cursor-pointer"
+                >
+                  {gmailLoading ? 'Connecting...' : 'Connect Gmail (Sandbox / Mock)'}
+                </button>
+                <a
+                  href="http://localhost:3000/api/integrations/gmail/connect"
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium font-sans border border-slate-700 transition"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Google OAuth
+                </a>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

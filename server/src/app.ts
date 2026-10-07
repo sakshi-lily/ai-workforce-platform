@@ -7,6 +7,7 @@ import { agentRouter } from "./routes/agentRoutes";
 import { ragRouter } from "./routes/ragRoutes";
 import { authRouter } from "./routes/authRoutes";
 import { taskRouter } from "./tasks/taskRoutes";
+import { gmailRouter } from "./integrations/gmail/gmailRoutes";
 
 export const app = express();
 
@@ -29,6 +30,7 @@ app.use("/api/ai", aiRouter);
 app.use("/api/agent", agentRouter);
 app.use("/api/rag", ragRouter);
 app.use("/api/tasks", taskRouter);
+app.use("/api/integrations/gmail", gmailRouter);
 
 // Catch-all 404 handler
 app.use((_req: Request, res: Response) => {

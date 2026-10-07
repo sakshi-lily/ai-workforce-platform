@@ -172,6 +172,100 @@ export async function executeChatStep(
       userPrompt.includes("vector") ||
       userPrompt.includes("mars");
 
+    // Phase 16: Gmail Profile, Search, and Send Proactive Routing
+    const isGmailProfile =
+      userPrompt.includes("gmail profile") ||
+      userPrompt.includes("verify gmail") ||
+      userPrompt.includes("check gmail connection") ||
+      userPrompt.includes("get profile");
+
+    const isGmailSearch =
+      userPrompt.includes("email") ||
+      userPrompt.includes("emails") ||
+      userPrompt.includes("gmail") ||
+      userPrompt.includes("inbox") ||
+      userPrompt.includes("mailbox");
+
+    const isGmailSendDirect =
+      (userPrompt.includes("send") || userPrompt.includes("dispatch")) &&
+      (userPrompt.includes("email") || userPrompt.includes("gmail") || userPrompt.includes("follow-up") || userPrompt.includes("apex cloud"));
+
+    if (isGmailProfile && options.tools?.some((t) => (t as any).function?.name === "gmail_get_profile")) {
+      return {
+        content: null,
+        toolCall: {
+          tool: "gmail_get_profile",
+          arguments: {},
+          toolCallId: "sim_call_gmail_prof_1",
+        },
+        telemetry: {
+          provider: `${provider}-simulation`,
+          model,
+          inputTokens,
+          outputTokens: 25,
+          totalTokens: inputTokens + 25,
+          latencyMs: elapsed,
+          estimatedCostUsd: calculateCostUsd(inputTokens, 25),
+          status: "SUCCESS",
+        },
+      };
+    }
+
+    if (isGmailSendDirect && !userPrompt.includes("find") && !userPrompt.includes("search") && !userPrompt.includes("draft") && options.tools?.some((t) => (t as any).function?.name === "gmail_send")) {
+      return {
+        content: null,
+        toolCall: {
+          tool: "gmail_send",
+          arguments: {
+            to: ["sarah@apexcloud.io"],
+            subject: "Follow-up: Apex Cloud SLA & Partnership Discussion",
+            body: "Hi Sarah,\n\nFollowing up on our recent conversation, we have finalized our enterprise SLA terms and look forward to partnering with Apex Cloud.\n\nBest regards,\nAI Workforce Team",
+            reason: "User requested dispatching the follow-up email to Apex Cloud.",
+          },
+          toolCallId: "sim_call_gmail_send_1",
+        },
+        telemetry: {
+          provider: `${provider}-simulation`,
+          model,
+          inputTokens,
+          outputTokens: 35,
+          totalTokens: inputTokens + 35,
+          latencyMs: elapsed,
+          estimatedCostUsd: calculateCostUsd(inputTokens, 35),
+          status: "SUCCESS",
+        },
+      };
+    }
+
+    if (isGmailSearch && options.tools?.some((t) => (t as any).function?.name === "gmail_search")) {
+      let q = "Apex Cloud";
+      if (userPrompt.includes("sarah")) q = "from:sarah@apexcloud.io";
+      else if (userPrompt.includes("billing") || userPrompt.includes("invoice")) q = "subject:invoice";
+      else if (userPrompt.includes("apex")) q = "Apex Cloud";
+
+      return {
+        content: null,
+        toolCall: {
+          tool: "gmail_search",
+          arguments: {
+            query: q,
+            maxResults: 5,
+          },
+          toolCallId: "sim_call_gmail_search_1",
+        },
+        telemetry: {
+          provider: `${provider}-simulation`,
+          model,
+          inputTokens,
+          outputTokens: 25,
+          totalTokens: inputTokens + 25,
+          latencyMs: elapsed,
+          estimatedCostUsd: calculateCostUsd(inputTokens, 25),
+          status: "SUCCESS",
+        },
+      };
+    }
+
     // Phase 12: Internal Grounded RAG Query
     if (isVectorSearch && options.tools?.some((t) => (t as any).function?.name === "rag_query")) {
       return {
@@ -371,6 +465,104 @@ export async function executeChatStep(
       };
     }
 
+    // Phase 16: Gmail Chaining: search -> get_message -> draft/send
+    const hasGmailSearchObs = messages.some((m) => m.role === "tool" && m.content.includes('"gmail_search"'));
+    const hasGmailMsgObs = messages.some((m) => m.role === "tool" && m.content.includes('"gmail_get_message"'));
+    const hasGmailDraftObs = messages.some((m) => m.role === "tool" && m.content.includes('"gmail_create_draft"'));
+    const hasGmailSendObs = messages.some((m) => m.role === "tool" && m.content.includes('"gmail_send"'));
+
+    // Chain 1: If search finished and message details needed
+    if (
+      hasGmailSearchObs &&
+      !hasGmailMsgObs &&
+      !hasGmailDraftObs &&
+      !hasGmailSendObs &&
+      (userPrompt.includes("summarize") || userPrompt.includes("conversation") || userPrompt.includes("draft") || userPrompt.includes("follow-up") || userPrompt.includes("read") || userPrompt.includes("detail")) &&
+      options.tools?.some((t) => (t as any).function?.name === "gmail_get_message")
+    ) {
+      return {
+        content: null,
+        toolCall: {
+          tool: "gmail_get_message",
+          arguments: { messageId: "msg_apex_001" },
+          toolCallId: "sim_call_gmail_msg_1",
+        },
+        telemetry: {
+          provider: `${provider}-simulation`,
+          model,
+          inputTokens,
+          outputTokens: 25,
+          totalTokens: inputTokens + 25,
+          latencyMs: elapsed,
+          estimatedCostUsd: calculateCostUsd(inputTokens, 25),
+          status: "SUCCESS",
+        },
+      };
+    }
+
+    // Chain 2: If message read finished and draft requested
+    if (
+      hasGmailMsgObs &&
+      !hasGmailDraftObs &&
+      (userPrompt.includes("draft") || userPrompt.includes("follow-up") || userPrompt.includes("reply")) &&
+      options.tools?.some((t) => (t as any).function?.name === "gmail_create_draft")
+    ) {
+      return {
+        content: null,
+        toolCall: {
+          tool: "gmail_create_draft",
+          arguments: {
+            to: ["sarah@apexcloud.io"],
+            subject: "Re: Partnership discussion & Enterprise SLA Terms",
+            body: "Hi Sarah,\n\nThank you for reaching out regarding the enterprise partnership with Apex Cloud. We would be delighted to structure the 100-seat pilot for your customer support operations and provide our standard SOC2 Type II compliance pack.\n\nLet us know when you would like to schedule a technical onboarding walkthrough.\n\nBest regards,\nAI Workforce Platform Team",
+          },
+          toolCallId: "sim_call_gmail_draft_1",
+        },
+        telemetry: {
+          provider: `${provider}-simulation`,
+          model,
+          inputTokens,
+          outputTokens: 35,
+          totalTokens: inputTokens + 35,
+          latencyMs: elapsed,
+          estimatedCostUsd: calculateCostUsd(inputTokens, 35),
+          status: "SUCCESS",
+        },
+      };
+    }
+
+    // Chain 3: If message read or task requested send -> Propose gmail_send
+    if (
+      (hasGmailMsgObs || hasGmailDraftObs) &&
+      !hasGmailSendObs &&
+      (userPrompt.includes("send") || userPrompt.includes("dispatch")) &&
+      options.tools?.some((t) => (t as any).function?.name === "gmail_send")
+    ) {
+      return {
+        content: null,
+        toolCall: {
+          tool: "gmail_send",
+          arguments: {
+            to: ["sarah@apexcloud.io"],
+            subject: "Re: Partnership discussion & Enterprise SLA Terms",
+            body: "Hi Sarah,\n\nFollowing up on our recent conversation, we have finalized our enterprise SLA terms and look forward to partnering with Apex Cloud.\n\nBest regards,\nAI Workforce Team",
+            reason: "User requested dispatching the follow-up email to Apex Cloud.",
+          },
+          toolCallId: "sim_call_gmail_send_2",
+        },
+        telemetry: {
+          provider: `${provider}-simulation`,
+          model,
+          inputTokens,
+          outputTokens: 35,
+          totalTokens: inputTokens + 35,
+          latencyMs: elapsed,
+          estimatedCostUsd: calculateCostUsd(inputTokens, 35),
+          status: "SUCCESS",
+        },
+      };
+    }
+
     // Synthesize final multi-source response
     const toolObservations = messages
       .filter((m) => m.role === "tool")
@@ -389,6 +581,11 @@ export async function executeChatStep(
     const calcObs = toolObservations.find((o) => o.tool === "calculate");
     const vectorObs = toolObservations.find((o) => o.tool === "vector_search");
     const ragObs = toolObservations.find((o) => o.tool === "rag_query");
+    const gmailDraftObs = toolObservations.find((o) => o.tool === "gmail_create_draft");
+    const gmailSendObs = toolObservations.find((o) => o.tool === "gmail_send");
+    const gmailMsgObs = toolObservations.find((o) => o.tool === "gmail_get_message");
+    const gmailSearchObs = toolObservations.find((o) => o.tool === "gmail_search");
+    const gmailProfObs = toolObservations.find((o) => o.tool === "gmail_get_profile");
 
     if (webObs && mysqlObs) {
       // Multi-Tool Combined Synthesis (Web Search + MySQL Verification)
@@ -507,6 +704,58 @@ export async function executeChatStep(
       } else {
         answer = `Internal knowledge RAG query failed: ${ragObs.error?.message || "Unknown error"}`;
       }
+    } else if (gmailDraftObs) {
+      const data = gmailDraftObs.data || {};
+      answer =
+        `### Gmail Draft Created (Safety Controlled)\n\n` +
+        `• **Status**: DRAFT CREATED — NOT SENT\n` +
+        `• **Draft ID**: \`${data.draftId || "draft_sim_101"}\`\n` +
+        `• **Recipient(s)**: ${(data.to || ["sarah@apexcloud.io"]).join(", ")}\n` +
+        `• **Subject**: ${data.subject || "Re: Partnership discussion & Enterprise SLA Terms"}\n` +
+        `• **Safety Guarantee**: The email draft has been generated and saved to your Gmail drafts folder. No external communication was dispatched.\n\n` +
+        `**Attributed Source:**\n` +
+        `[Integration] Authorized Gmail Connection (drafts.create)`;
+    } else if (gmailSendObs) {
+      const data = gmailSendObs.data || {};
+      answer =
+        `### External Action Intercepted — Human Approval Required\n\n` +
+        `• **Action**: \`gmail_send\` (EXTERNAL_SIDE_EFFECT)\n` +
+        `• **Approval Status**: APPROVAL_REQUIRED (Staged for Phase 17)\n` +
+        `• **Approval ID**: \`${data.approvalId || "appr_sim_001"}\`\n` +
+        `• **Reason**: Autonomous external email sending is strictly prohibited by platform security policy without explicit Human Approval.\n` +
+        `• **Recipient**: ${(data.details?.to || ["sarah@apexcloud.io"]).join(", ")}\n\n` +
+        `**Safety Boundary:**\n` +
+        `The external side-effect has been halted and registered in the approvals queue.`;
+    } else if (gmailMsgObs) {
+      const msg = gmailMsgObs.data?.message || gmailMsgObs.data || {};
+      const cleanSnippet = msg.snippet || (msg.bodyText ? msg.bodyText.slice(0, 150) : "Partnership discussion terms");
+      answer =
+        `### Gmail Conversation Analysis (Apex Cloud)\n\n` +
+        `• **Subject**: ${msg.subject || "Partnership discussion & Enterprise SLA Terms"}\n` +
+        `• **From**: ${msg.from || "Sarah Lin <sarah@apexcloud.io>"}\n` +
+        `• **Thread ID**: \`${msg.threadId || "thread_apex_001"}\`\n` +
+        `• **Summary**: ${cleanSnippet}\n\n` +
+        `**Key Points Identified:**\n` +
+        `1. Apex Cloud expressed interest in deploying an AI workforce pilot for customer support.\n` +
+        `2. Requested enterprise SLA metrics and 99.9% uptime commitments.\n` +
+        `3. Proposed a follow-up discussion next week.\n\n` +
+        `*(Security Notice: Untrusted external email body parsed safely into plain text)*\n\n` +
+        `**Attributed Source:**\n` +
+        `[Integration] Authorized Gmail Connection (messages.get, id: ${msg.messageId || "msg_apex_001"})`;
+    } else if (gmailSearchObs) {
+      const data = gmailSearchObs.data || {};
+      const count = data.count ?? (data.messages?.length || 0);
+      const messagesList = (data.messages || [])
+        .map((m: any, idx: number) => `[${idx + 1}] **${m.subject}** from \`${m.from}\` (${m.receivedAt?.slice(0, 10) || "Recent"}) — ID: \`${m.messageId}\``)
+        .join("\n");
+      answer =
+        `### Gmail Search Results\n\n` +
+        `Found ${count} message(s) matching query '${data.query || "Apex Cloud"}'.\n\n` +
+        (messagesList || "No messages found.") +
+        `\n\n**Attributed Source:**\n[Integration] Authorized Gmail Connection (messages.list)`;
+    } else if (gmailProfObs) {
+      const data = gmailProfObs.data || {};
+      answer = `Connected Gmail account: ${data.email || "user@example.com"} (Status: CONNECTED, Messages: ${data.messagesTotal || 1420}).`;
     }
 
     const outputTokens = Math.max(25, Math.round(answer.length / 4));
@@ -546,6 +795,17 @@ export async function executeChatStep(
           sources: ["Authoritative Server Clock", "Local Arithmetic Evaluator"],
           confidence: 0.99,
         });
+      } else if (lowerPrompt.includes("gmail") || lowerPrompt.includes("email")) {
+        simulatedContent = JSON.stringify({
+          summary: "Apex Cloud email communications inspected and summarized. Partnership discussion covers enterprise support SLA terms and a 100-seat pilot.",
+          findings: [
+            { title: "Subject", value: "Partnership discussion & Enterprise SLA Terms" },
+            { title: "Sender", value: "Sarah Lin (sarah@apexcloud.io)" },
+            { title: "Key Request", value: "Enterprise SLA metrics and 99.9% uptime commitments requested." },
+          ],
+          sources: ["Gmail Search (messages.list)", "Gmail Message Body (messages.get)"],
+          confidence: 0.98,
+        });
       } else {
         simulatedContent = JSON.stringify({
           summary: "Apex Cloud is an existing customer verified in our internal MySQL database and supported by public web intelligence and internal knowledge documentation.",
@@ -576,7 +836,58 @@ export async function executeChatStep(
       const activeHeaderMatch = promptText.match(/Step ID:\s*([a-zA-Z0-9_-]+)/i);
       const activeStepId = activeHeaderMatch ? activeHeaderMatch[1].toLowerCase() : "";
 
-      if (permittedToolsStr.includes("rag_query") || activeStepId.includes("rag")) {
+      if (permittedToolsStr.includes("gmail_get_profile") || activeStepId.includes("profile")) {
+        simulatedContent = JSON.stringify({
+          type: "CALL_TOOL",
+          reasoningSummary: "Retrieving connected Gmail profile.",
+          toolCall: { tool: "gmail_get_profile", arguments: {} },
+        });
+      } else if (permittedToolsStr.includes("gmail_send") || activeStepId.includes("send")) {
+        simulatedContent = JSON.stringify({
+          type: "CALL_TOOL",
+          reasoningSummary: "Proposing to send follow-up email to Apex Cloud.",
+          toolCall: {
+            tool: "gmail_send",
+            arguments: {
+              to: ["sarah@apexcloud.io"],
+              subject: "Follow-up: Apex Cloud SLA & Partnership Discussion",
+              body: "Hi Sarah,\n\nFollowing up on our partnership discussion, we would love to proceed with the pilot.\n\nBest regards,\nAI Workforce Team",
+              reason: "User requested dispatching the follow-up email to Apex Cloud.",
+            },
+          },
+        });
+      } else if (permittedToolsStr.includes("gmail_create_draft") || activeStepId.includes("draft")) {
+        simulatedContent = JSON.stringify({
+          type: "CALL_TOOL",
+          reasoningSummary: "Creating follow-up draft in Gmail mailbox.",
+          toolCall: {
+            tool: "gmail_create_draft",
+            arguments: {
+              to: ["sarah@apexcloud.io"],
+              subject: "Re: Partnership discussion & Enterprise SLA Terms",
+              body: "Hi Sarah,\n\nThank you for reaching out regarding the partnership. We have prepared the SLA terms and would love to schedule our next steps.\n\nBest regards,\nAI Workforce Team",
+            },
+          },
+        });
+      } else if (permittedToolsStr.includes("gmail_get_message") || activeStepId.includes("message")) {
+        simulatedContent = JSON.stringify({
+          type: "CALL_TOOL",
+          reasoningSummary: "Retrieving message content from Gmail thread.",
+          toolCall: {
+            tool: "gmail_get_message",
+            arguments: { messageId: "msg_apex_001" },
+          },
+        });
+      } else if (permittedToolsStr.includes("gmail_search") || activeStepId.includes("email") || (activeStepId.includes("search") && permittedToolsStr.includes("gmail"))) {
+        simulatedContent = JSON.stringify({
+          type: "CALL_TOOL",
+          reasoningSummary: "Searching Gmail messages for Apex Cloud correspondence.",
+          toolCall: {
+            tool: "gmail_search",
+            arguments: { query: "Apex Cloud", maxResults: 5 },
+          },
+        });
+      } else if (permittedToolsStr.includes("rag_query") || activeStepId.includes("rag")) {
         simulatedContent = JSON.stringify({
           type: "CALL_TOOL",
           reasoningSummary: "Querying internal knowledge repository via RAG.",
@@ -653,7 +964,82 @@ export async function executeChatStep(
       lowerPrompt.includes("dag execution plan") ||
       lowerPrompt.includes("dag rules")
     ) {
-      if (lowerPrompt.includes("time") || lowerPrompt.includes("calculate") || lowerPrompt.includes("clock")) {
+      const userMessage = [...messages].reverse().find((m) => m.role === "user");
+      const userGoalPrompt = (userMessage?.content || "").toLowerCase();
+
+      if (userGoalPrompt.includes("gmail") || userGoalPrompt.includes("email")) {
+        if (userGoalPrompt.includes("send")) {
+          simulatedContent = JSON.stringify({
+            goal: "Send follow-up email to Apex Cloud",
+            summary: "Propose outbound email delivery to Apex Cloud",
+            steps: [
+              {
+                id: "step_send",
+                order: 1,
+                title: "Propose Outbound Email Send",
+                description: "Submit email send request to approval boundary",
+                dependencies: [],
+                allowedTools: ["gmail_send"],
+              },
+            ],
+          });
+        } else if (userGoalPrompt.includes("draft")) {
+          simulatedContent = JSON.stringify({
+            goal: "Draft follow-up email to Apex Cloud",
+            summary: "Search emails, inspect thread, and create Gmail draft",
+            steps: [
+              {
+                id: "step_search",
+                order: 1,
+                title: "Search Recent Emails",
+                description: "Search Gmail messages for Apex Cloud communications",
+                dependencies: [],
+                allowedTools: ["gmail_search"],
+              },
+              {
+                id: "step_message",
+                order: 2,
+                title: "Retrieve Email Details",
+                description: "Fetch message content for latest Apex Cloud email",
+                dependencies: ["step_search"],
+                allowedTools: ["gmail_get_message"],
+              },
+              {
+                id: "step_draft",
+                order: 3,
+                title: "Create Follow-up Draft",
+                description: "Generate and save response draft to Gmail",
+                dependencies: ["step_message"],
+                allowedTools: ["gmail_create_draft"],
+              },
+            ],
+          });
+        } else {
+          // Read / Summarize
+          simulatedContent = JSON.stringify({
+            goal: "Find recent emails from Apex Cloud and summarize",
+            summary: "Search emails and summarize Apex Cloud correspondence",
+            steps: [
+              {
+                id: "step_search",
+                order: 1,
+                title: "Search Apex Cloud Emails",
+                description: "Search Gmail for recent emails from Apex Cloud",
+                dependencies: [],
+                allowedTools: ["gmail_search"],
+              },
+              {
+                id: "step_message",
+                order: 2,
+                title: "Retrieve Message Details",
+                description: "Inspect Apex Cloud email content",
+                dependencies: ["step_search"],
+                allowedTools: ["gmail_get_message"],
+              },
+            ],
+          });
+        }
+      } else if (userGoalPrompt.includes("time") || userGoalPrompt.includes("calculate") || userGoalPrompt.includes("clock")) {
         simulatedContent = JSON.stringify({
           goal: "Time and calculation verification",
           summary: "Check current time and evaluate calculation",

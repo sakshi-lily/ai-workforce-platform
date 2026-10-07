@@ -44,7 +44,6 @@ export class AgentPolicyEngine {
    * Tools explicitly blocked from autonomous execution in Phase 15.
    */
   private static readonly BLOCKED_TOOLS = new Set<string>([
-    "gmail_send",
     "send_email",
     "execute_sql",
     "shell_exec",
@@ -81,7 +80,15 @@ export class AgentPolicyEngine {
       );
     }
 
-    // 3. Verify tool risk level
+    // 3. Verify tool risk level (Phase 16 Approval Boundary: EXTERNAL_SIDE_EFFECT requires human approval)
+    if (tool.riskLevel === "EXTERNAL_SIDE_EFFECT") {
+      throw new PolicyViolationError(
+        `Tool '${toolName}' risk level 'EXTERNAL_SIDE_EFFECT' requires Human Approval and cannot execute autonomously.`,
+        "APPROVAL_REQUIRED",
+        { toolName, riskLevel: tool.riskLevel }
+      );
+    }
+
     if (!this.MAX_ALLOWED_RISK.includes(tool.riskLevel)) {
       throw new PolicyViolationError(
         `Tool '${toolName}' risk level '${tool.riskLevel}' exceeds autonomous execution threshold.`,

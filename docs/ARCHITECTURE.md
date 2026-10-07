@@ -306,4 +306,52 @@ The LLM is strictly treated as an untrusted advisory component. It never owns:
    - Gathers execution observations across `Customer Database (MySQL)`, `Web Search`, and `Internal Knowledge Base (Qdrant)`.
    - Produces a grounded report with verified findings and confidence scores.
 
+---
 
+## 11. Gmail Automation & External Communication (Phase 16)
+
+Phase 16 introduces **Gmail as the first major external communication capability**, establishing distinct risk tiers between data retrieval and external side effects:
+
+```mermaid
+graph TD
+    ReactClient["React Client (Vite)"]
+    API["Express API Gateway"]
+    AuthCtx["Authentication Context (JWT)"]
+    TaskSvc["Task Service"]
+    AgentRuntime["Agent Runtime"]
+    Policy["Agent Policy Engine"]
+    ToolReg["Tool Registry"]
+    GmailSvc["Gmail Service & Crypto"]
+    GmailProvider["Gmail Provider / Mock"]
+    ApprovalBoundary["Approval Boundary Interception"]
+    MySQLApprovals[("MySQL approvals Table")]
+
+    ReactClient -->|Connect / Task| API
+    API -->|Enforce Identity| AuthCtx
+    AuthCtx --> TaskSvc
+    TaskSvc --> AgentRuntime
+    AgentRuntime --> Policy
+    Policy --> ToolReg
+
+    ToolReg -->|READ_ONLY / MUTATING| GmailSvc
+    GmailSvc --> GmailProvider
+
+    ToolReg -->|EXTERNAL_SIDE_EFFECT gmail_send| ApprovalBoundary
+    ApprovalBoundary -->|Stage PENDING| MySQLApprovals
+```
+
+### Key Design Principles & Security Controls:
+1. **Risk Tiering:**
+   - `READ_ONLY`: `gmail_get_profile`, `gmail_search`, `gmail_get_message`.
+   - `MUTATING`: `gmail_create_draft` (mailbox mutation only, clearly marked `DRAFT CREATED — NOT SENT`).
+   - `EXTERNAL_SIDE_EFFECT`: `gmail_send` (strictly intercepted at approval boundary, staged in MySQL `approvals`).
+2. **Credential Security at Rest:**
+   - Access and refresh tokens encrypted with AES-256-GCM (`iv:authTag:ciphertext`).
+   - Zero plaintext tokens exposed in responses, logs, prompts, or UI.
+3. **OAuth 2.0 Anti-CSRF:**
+   - HMAC-SHA256 signed `state` tokens bound to `userId`, `organizationId`, and timestamp with automatic expiry (>15 min) and tamper rejection.
+4. **Prompt Injection Containment:**
+   - Cheerio-based HTML sanitization stripping scripts, styles, and trackers.
+   - Untrusted email bodies wrapped in `<<<UNTRUSTED_EXTERNAL_EMAIL>>>` inert delimiters with safety notices and size bounds (`MAX_EMAIL_BODY_CHARS: 4000`).
+5. **Multi-Tenant Scoping:**
+   - All Gmail connections are scoped strictly to authenticated `user_id` and `organization_id`.

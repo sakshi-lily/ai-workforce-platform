@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "test:phase13": "tsx src/auth/testPhase13.ts",
     "test:phase14": "tsx src/tasks/testPhase14.ts",
-    "test:phase15": "tsx src/agent/testPhase15.ts"
+    "test:phase15": "tsx src/agent/testPhase15.ts",
+    "test:phase16": "tsx src/integrations/gmail/testPhase16.ts"
   },
   "dependencies": {
     "@qdrant/js-client-rest": "^1.19.0",

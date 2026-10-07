@@ -19,6 +19,7 @@ import { pool } from "../db/pool";
 import { toolRegistry } from "../tools/registry";
 import { recordToolExecution } from "../services/toolExecutionService";
 import { recordAITelemetry } from "../services/aiService";
+import { gmailService } from "../integrations/gmail/gmailService";
 import {
   AdvancedAgentPlan,
   AdvancedPlanStep,
@@ -346,6 +347,66 @@ export class AgentRuntime {
             const requestedArgs = decision.toolCall.arguments;
 
             logState("TOOL_REQUESTED", `Model requested tool '${requestedTool}' for step '${activeStep.id}'.`);
+
+            // Phase 16: Intercept external side-effect tools (gmail_send) at the Approval Boundary
+            if (requestedTool === "gmail_send") {
+              logState("TOOL_REQUESTED", `Tool 'gmail_send' proposed by model. Intercepting at approval boundary (Phase 16).`);
+              const toolStartTime = performance.now();
+              const stageResult = await gmailService.stageSendForApproval(
+                requestedArgs as any,
+                { userId: context.userId, organizationId: context.organizationId, taskId }
+              );
+              const durationMs = Math.round(performance.now() - toolStartTime);
+
+              const approvalData = {
+                status: "APPROVAL_REQUIRED",
+                approvalId: stageResult.approvalId,
+                reason: stageResult.reason,
+                details: stageResult.details,
+              };
+
+              const execRecordId = await recordToolExecution(
+                taskId,
+                requestedTool,
+                requestedArgs,
+                { tool: requestedTool, success: true, data: approvalData },
+                durationMs,
+                dbStepId
+              );
+
+              executedToolRecords.push({
+                id: execRecordId,
+                tool: requestedTool,
+                arguments: requestedArgs,
+                result: approvalData,
+                durationMs,
+                success: true,
+              });
+
+              const observation: AgentObservation = {
+                type: "tool_result",
+                tool: requestedTool,
+                status: "success",
+                summary: `External communication staged for Human Approval: ${stageResult.reason} (Approval ID: ${stageResult.approvalId})`,
+                data: approvalData,
+                durationMs,
+                timestamp: new Date().toISOString(),
+                stepId: activeStep.id,
+              };
+
+              contextManager.addObservation(observation);
+              activeStep.status = "COMPLETED";
+              activeStep.resultSummary = observation.summary;
+              await this.updateStepInDatabase(dbStepId, {
+                status: "COMPLETED",
+                toolName: requestedTool,
+                outputData: approvalData,
+                completedAt: true,
+              });
+
+              stepCompleted = true;
+              break;
+            }
 
             // Policy authorization check
             AgentPolicyEngine.authorizeToolExecution(

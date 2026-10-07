@@ -138,3 +138,18 @@ Immutable compliance and security record tracking sensitive authentication and t
 ### 2.8 `ai_telemetry`
 Records granular LLM token usage, duration, model identifiers, and dollar cost for every task execution run (`task_id`, `model`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `latency_ms`, `estimated_cost_usd`, `created_at`).
 
+### 2.9 `gmail_connections` (Phase 16)
+Stores durable OAuth connection states and credentials encrypted at rest for external Gmail integration.
+- `id` (VARCHAR 64 PK): Unique connection identifier (`conn_...`).
+- `user_id` (VARCHAR 64 FK): User identity derived from server JWT context.
+- `organization_id` (VARCHAR 64): Authoritative tenant ID.
+- `provider` (VARCHAR 32): Provider identifier (`google`).
+- `email_address` (VARCHAR 255): Connected Gmail account email.
+- `provider_account_id` (VARCHAR 255): Google OAuth account identifier (sub).
+- `access_token_encrypted` (TEXT): AES-256-GCM ciphertext (`iv:authTag:ciphertext`). Never exposed plaintext.
+- `refresh_token_encrypted` (TEXT): AES-256-GCM ciphertext. Never exposed plaintext.
+- `token_expires_at` (TIMESTAMP): Expiry timestamp for proactive refresh token rotation.
+- `scopes` (JSON): Authorized Gmail OAuth scopes.
+- `status` (ENUM 'CONNECTED', 'DISCONNECTED', 'EXPIRED', 'REAUTH_REQUIRED', 'ERROR'): Connection lifecycle state.
+- `created_at`, `updated_at`: Timestamps.
+- Indexes: `(user_id, organization_id)`, `email_address`, `status`.
