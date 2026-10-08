@@ -46,63 +46,94 @@ jobs:
           echo "image_tag=${COMMIT_SHA}" >> "$GITHUB_OUTPUT"
           echo "Release version computed: ${COMMIT_SHA}"
 
-      - name: Configure AWS Credentials (OIDC Short-Lived Role)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN || 'arn:aws:iam::123456789012:role/AIWorkforceGitHubDeployRole' }}
-          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
-          audience: sts.amazonaws.com
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-        continue-on-error: true # Permits simulation in test CI runner
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build & Tag API Image (Immutable SHA + Moving Pointer)
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry || 'local.ecr' }}
           IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
         run: |
           docker build \
             --build-arg BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
             --build-arg GIT_COMMIT_SHA=${{ github.sha }} \
             -f docker/Dockerfile.api \
-            -t ${ECR_REGISTRY}/ai-workforce-api:${IMAGE_TAG} \
-            -t ${ECR_REGISTRY}/ai-workforce-api:production \
+            -t ai-workforce-api:${IMAGE_TAG} \
+            -t ai-workforce-api:production \
             .
 
       - name: Build & Tag Worker Daemon Image
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry || 'local.ecr' }}
           IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
         run: |
           docker build \
+            --build-arg BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+            --build-arg GIT_COMMIT_SHA=${{ github.sha }} \
             -f docker/Dockerfile.worker \
-            -t ${ECR_REGISTRY}/ai-workforce-worker:${IMAGE_TAG} \
-            -t ${ECR_REGISTRY}/ai-workforce-worker:production \
+            -t ai-workforce-worker:${IMAGE_TAG} \
+            -t ai-workforce-worker:production \
+            .
+
+      - name: Build & Tag Client Web Image
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          docker build \
+            -f docker/Dockerfile.client \
+            -t ai-workforce-client:${IMAGE_TAG} \
+            -t ai-workforce-client:production \
             .
 
       - name: Scan API Image for High/Critical Vulnerabilities (Trivy)
         uses: aquasecurity/trivy-action@master
-        continue-on-error: true
         with:
-          image-ref: ${{ steps.login-ecr.outputs.registry || 'local.ecr' }}/ai-workforce-api:${{ steps.meta.outputs.image_tag }}
+          image-ref: ai-workforce-api:${{ steps.meta.outputs.image_tag }}
           format: 'table'
           severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+
+      - name: Check AWS Deployment Role
+        id: aws-check
+        run: |
+          if [ -n "${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}" ]; then
+            echo "has_role=true" >> "$GITHUB_OUTPUT"
+            echo "AWS OIDC Role configured: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}"
+          else
+            echo "has_role=false" >> "$GITHUB_OUTPUT"
+            echo "::notice ::AWS_DEPLOYMENT_ROLE_ARN is not set in repository secrets. Skipping live AWS cloud push."
+          fi
+
+      - name: Configure AWS Credentials (OIDC Short-Lived Role)
+        if: steps.aws-check.outputs.has_role == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          audience: sts.amazonaws.com
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        if: steps.aws-check.outputs.has_role == 'true'
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Push Container Images to Amazon ECR
-        if: steps.login-ecr.outcome == 'success'
+        if: steps.aws-check.outputs.has_role == 'true' && steps.login-ecr.outcome == 'success'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
         run: |
+          docker tag ai-workforce-api:${IMAGE_TAG} ${ECR_REGISTRY}/ai-workforce-api:${IMAGE_TAG}
+          docker tag ai-workforce-api:${IMAGE_TAG} ${ECR_REGISTRY}/ai-workforce-api:production
+          docker tag ai-workforce-worker:${IMAGE_TAG} ${ECR_REGISTRY}/ai-workforce-worker:${IMAGE_TAG}
+          docker tag ai-workforce-worker:${IMAGE_TAG} ${ECR_REGISTRY}/ai-workforce-worker:production
+          docker tag ai-workforce-client:${IMAGE_TAG} ${ECR_REGISTRY}/ai-workforce-client:${IMAGE_TAG}
+          docker tag ai-workforce-client:${IMAGE_TAG} ${ECR_REGISTRY}/ai-workforce-client:production
+
           docker push ${ECR_REGISTRY}/ai-workforce-api:${IMAGE_TAG}
           docker push ${ECR_REGISTRY}/ai-workforce-api:production
           docker push ${ECR_REGISTRY}/ai-workforce-worker:${IMAGE_TAG}
           docker push ${ECR_REGISTRY}/ai-workforce-worker:production
+          docker push ${ECR_REGISTRY}/ai-workforce-client:${IMAGE_TAG}
+          docker push ${ECR_REGISTRY}/ai-workforce-client:production
 
   database-migration:
     name: Amazon RDS Schema Migration (Expand Phase)
@@ -126,14 +157,18 @@ jobs:
       - name: Execute Non-Destructive RDS Migration Runner
         working-directory: ./server
         env:
-          DB_HOST: ${{ secrets.RDS_HOSTNAME || '127.0.0.1' }}
-          DB_PORT: 3306
-          DB_USER: ${{ secrets.RDS_USERNAME || 'root' }}
-          DB_PASSWORD: ${{ secrets.RDS_PASSWORD || 'rootpassword' }}
+          DB_HOST: ${{ secrets.RDS_HOSTNAME }}
+          DB_PORT: ${{ secrets.RDS_PORT || '3306' }}
+          DB_USER: ${{ secrets.RDS_USERNAME || 'workforce_admin' }}
+          DB_PASSWORD: ${{ secrets.RDS_PASSWORD }}
           DB_NAME: ${{ secrets.RDS_DATABASE || 'ai_workforce' }}
         run: |
-          echo "Running backward-compatible RDS database migration..."
-          npm run db:migrate-rds || true
+          if [ -n "$DB_HOST" ] && [ -n "$DB_PASSWORD" ]; then
+            echo "Running backward-compatible RDS database migration against ${DB_HOST}..."
+            npm run db:migrate-rds
+          else
+            echo "RDS credentials not supplied in secrets; skipping remote migration step."
+          fi
 
   deploy-ecs-fargate:
     name: Deploy Container Services to Amazon ECS Fargate
@@ -141,27 +176,64 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 15
+    outputs:
+      previous_api_task_def: ${{ steps.record-previous.outputs.previous_api_task_def }}
+      previous_worker_task_def: ${{ steps.record-previous.outputs.previous_worker_task_def }}
     steps:
       - name: Configure AWS Credentials (OIDC)
+        if: env.AWS_DEPLOYMENT_ROLE_ARN != ''
         uses: aws-actions/configure-aws-credentials@v4
+        env:
+          AWS_DEPLOYMENT_ROLE_ARN: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN || 'arn:aws:iam::123456789012:role/AIWorkforceGitHubDeployRole' }}
+          role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Record Current Stable Task Definitions (For Automated Rollback Baseline)
+        id: record-previous
+        run: |
+          if [ -n "${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}" ]; then
+            CLUSTER="${{ secrets.ECS_CLUSTER || 'production-ai-workforce-cluster' }}"
+            API_SVC="${{ secrets.API_SERVICE || 'production-api-service' }}"
+            WORKER_SVC="${{ secrets.WORKER_SERVICE || 'production-worker-service' }}"
+
+            PREV_API=$(aws ecs describe-services --cluster "$CLUSTER" --services "$API_SVC" --query "services[0].taskDefinition" --output text 2>/dev/null || echo "")
+            PREV_WRK=$(aws ecs describe-services --cluster "$CLUSTER" --services "$WORKER_SVC" --query "services[0].taskDefinition" --output text 2>/dev/null || echo "")
+            echo "previous_api_task_def=${PREV_API}" >> "$GITHUB_OUTPUT"
+            echo "previous_worker_task_def=${PREV_WRK}" >> "$GITHUB_OUTPUT"
+            echo "Baseline stable task definitions recorded: API=${PREV_API}, Worker=${PREV_WRK}"
+          else
+            echo "previous_api_task_def=" >> "$GITHUB_OUTPUT"
+            echo "previous_worker_task_def=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Update ECS API Service (Rolling Deployment)
         run: |
           echo "Updating Amazon ECS Fargate API service with immutable tag ${{ needs.build-scan-publish.outputs.image_tag }}..."
-          # aws ecs update-service --cluster ai-workforce-cluster --service ai-workforce-api --force-new-deployment
+          if [ -n "${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}" ]; then
+            CLUSTER="${{ secrets.ECS_CLUSTER || 'production-ai-workforce-cluster' }}"
+            API_SVC="${{ secrets.API_SERVICE || 'production-api-service' }}"
+            aws ecs update-service --cluster "$CLUSTER" --service "$API_SVC" --force-new-deployment
+          fi
 
       - name: Update ECS Headless Worker Service (Graceful Drain)
         run: |
           echo "Updating Amazon ECS Fargate Worker daemon service..."
-          # aws ecs update-service --cluster ai-workforce-cluster --service ai-workforce-worker --force-new-deployment
+          if [ -n "${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}" ]; then
+            CLUSTER="${{ secrets.ECS_CLUSTER || 'production-ai-workforce-cluster' }}"
+            WORKER_SVC="${{ secrets.WORKER_SERVICE || 'production-worker-service' }}"
+            aws ecs update-service --cluster "$CLUSTER" --service "$WORKER_SVC" --force-new-deployment
+          fi
 
       - name: Wait for ECS Services to Stabilize
         run: |
           echo "Awaiting ECS services stabilization..."
-          # aws ecs wait services-stable --cluster ai-workforce-cluster --services ai-workforce-api ai-workforce-worker
+          if [ -n "${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}" ]; then
+            CLUSTER="${{ secrets.ECS_CLUSTER || 'production-ai-workforce-cluster' }}"
+            API_SVC="${{ secrets.API_SERVICE || 'production-api-service' }}"
+            WORKER_SVC="${{ secrets.WORKER_SERVICE || 'production-worker-service' }}"
+            aws ecs wait services-stable --cluster "$CLUSTER" --services "$API_SVC" "$WORKER_SVC"
+          fi
 
   verify-and-smoke-test:
     name: Production Health Verification & Smoke Tests
@@ -185,34 +257,72 @@ jobs:
       - name: Execute Live Post-Deployment Smoke Tests
         working-directory: ./server
         env:
-          PROD_ALB_ENDPOINT: ${{ secrets.ALB_DNS_NAME || 'http://127.0.0.1:3000' }}
+          PROD_ALB_ENDPOINT: ${{ secrets.ALB_DNS_NAME }}
         run: |
           echo "Running post-deploy smoke tests against ALB and internal probes..."
           npx tsx -e "import { runAllSmokeTests } from './src/cicd/smokeTests'; runAllSmokeTests().then(r => { if (!r.passed) { console.error('Smoke tests failed:', r.results.filter(x => !x.passed)); process.exit(1); } console.log('All smoke tests passed!'); });"
 
   rollback-on-failure:
     name: Automated Rollback on Verification Failure
-    needs: [verify-and-smoke-test]
+    needs: [verify-and-smoke-test, deploy-ecs-fargate]
     if: failure()
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Configure AWS Credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Runtime (v22.x)
+        uses: actions/setup-node@v4
         with:
-          role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN || 'arn:aws:iam::123456789012:role/AIWorkforceGitHubDeployRole' }}
+          node-version: 22
+
+      - name: Install Server Dependencies
+        working-directory: ./server
+        run: npm ci
+
+      - name: Configure AWS Credentials (OIDC)
+        if: env.AWS_DEPLOYMENT_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        env:
+          AWS_DEPLOYMENT_ROLE_ARN: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
 
       - name: Revert ECS Task Definition to Previous Revision
         run: |
           echo "EMERGENCY: Post-deployment health verification failed!"
           echo "Reverting Amazon ECS Fargate service to previous stable task definition..."
-          # aws ecs update-service --cluster ai-workforce-cluster --service ai-workforce-api --task-definition ai-workforce-api:PREVIOUS_REVISION
-          # aws ecs update-service --cluster ai-workforce-cluster --service ai-workforce-worker --task-definition ai-workforce-worker:PREVIOUS_REVISION
+          if [ -n "${{ secrets.AWS_DEPLOYMENT_ROLE_ARN }}" ]; then
+            CLUSTER="${{ secrets.ECS_CLUSTER || 'production-ai-workforce-cluster' }}"
+            API_SVC="${{ secrets.API_SERVICE || 'production-api-service' }}"
+            WORKER_SVC="${{ secrets.WORKER_SERVICE || 'production-worker-service' }}"
+            PREV_API="${{ needs.deploy-ecs-fargate.outputs.previous_api_task_def }}"
+            PREV_WRK="${{ needs.deploy-ecs-fargate.outputs.previous_worker_task_def }}"
+
+            if [ -n "$PREV_API" ]; then
+              echo "Reverting API service to previous revision: $PREV_API"
+              aws ecs update-service --cluster "$CLUSTER" --service "$API_SVC" --task-definition "$PREV_API"
+            fi
+            if [ -n "$PREV_WRK" ]; then
+              echo "Reverting Worker service to previous revision: $PREV_WRK"
+              aws ecs update-service --cluster "$CLUSTER" --service "$WORKER_SVC" --task-definition "$PREV_WRK"
+            fi
+            if [ -n "$PREV_API" ]; then
+              echo "Waiting for rolled-back ECS services to stabilize..."
+              aws ecs wait services-stable --cluster "$CLUSTER" --services "$API_SVC"
+            fi
+          fi
 
       - name: Log Rollback Incident & Alert
+        working-directory: ./server
         run: |
           echo "Rollback successfully issued. Application restored to previous stable version."
+          npx tsx -e "
+            import { rollbackManager } from './src/cicd/rollbackManager';
+            rollbackManager.executeRollback('ai-workforce-api', 'Automated rollback triggered by verification failure').then(r => console.log('Rollback audit record saved:', r));
+          "
 
   audit-and-notify:
     name: Deployment Audit & Release Record

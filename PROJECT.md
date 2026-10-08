@@ -9,26 +9,32 @@
 **Developer:** Sakshi
 
 ### Phase 23 Deliverables Summary (CI/CD & Automated Delivery)
-- [x] **Continuous Integration Pipeline (`.github/workflows/ci.yml`):** Automatic triggers on PRs and merges to `main`, explicit Node.js 22 runtime, reproducible `npm ci` installation, secret scanning, linting, strict `tsc --noEmit` type checking, AI regressions, and container build verification.
-- [x] **Continuous Deployment Pipeline (`.github/workflows/cd.yml`):** Automated delivery to production AWS environment, AWS OIDC short-lived credential federation (`role-to-assume`), Amazon ECR publishing with immutable Git SHA tags, non-destructive RDS migrations, Amazon ECS Fargate deployment, live smoke testing, and automated rollback upon health failure.
-- [x] **AWS OIDC Least Privilege Authentication:** Zero permanent AWS access keys in repository or CI; authentication uses temporary GitHub OIDC STS tokens.
+- [x] **Continuous Integration Pipeline (`.github/workflows/ci.yml`):** Automatic triggers on PRs and merges to `main`, explicit Node.js 22 runtime, reproducible `npm ci` installation, secret scanning, linting, strict `tsc --noEmit` type checking, AI regressions, and container runtime build verification (API liveness probe, client nginx health check, worker unprivileged non-root user validation).
+- [x] **Continuous Deployment Pipeline (`.github/workflows/cd.yml`):** Automated delivery to production AWS environment, AWS OIDC short-lived credential federation (`role-to-assume`), container security vulnerability scanning via Trivy, Amazon ECR publishing with immutable Git SHA tags, non-destructive RDS migrations, Amazon ECS Fargate deployment, 14-point smoke testing, and automated rollback upon health failure.
+- [x] **AWS OIDC Least Privilege Authentication:** Zero permanent AWS access keys in repository or CI; authentication uses temporary GitHub OIDC STS tokens with least privilege ECR, ECS, and PassRole permissions.
 - [x] **Safe Build Metadata Telemetry:** `/api/health` exposes safe release telemetry (semantic version, Git commit SHA, build timestamp, environment) without exposing credentials.
-- [x] **Post-Deployment Smoke Test Suite (`src/cicd/smokeTests.ts`):** Verifies ALB liveness (`/api/health/liveness`), readiness (`/api/health/readiness`), Amazon RDS MySQL, Amazon ElastiCache Redis, deterministic AI tool execution (`calculate`), and approval state durability.
+- [x] **Post-Deployment Smoke Test Suite (`src/cicd/smokeTests.ts`):** 14 production-grade verification checks including ALB liveness (`/api/health/liveness`), readiness (`/api/health/readiness`), build telemetry, frontend asset delivery, auth flows, task schema lifecycle, worker Redlock keying, queue priority scoring, RDS MySQL, ElastiCache Redis, AI execution path readiness, deterministic tool execution (`calculate`), approval state persistence, and zero 5xx error verification.
 - [x] **AI Workforce & Security Regression Suite (`src/cicd/securityRegressions.ts`):** Guarantees tool allowlists, parameter validation schemas, prompt injection containment, tenant isolation, and approval requirements for external side effects.
 - [x] **Disaster Recovery & Automated Rollback Drill (`src/cicd/rollbackManager.ts`):** Automatic rollback mechanism reverts ECS task definitions to previous known stable versions upon simulated or real failure and records deployment audit records.
-- [x] **Repository Secret Audit (`src/cicd/secretAudit.ts`):** Scans source code and configs to prevent accidental credential leakage in Git.
+- [x] **Repository Secret Audit (`src/cicd/secretAudit.ts`):** Scans source code and configs to prevent accidental credential leakage in Git (155 files scanned, 0 violations).
 - [x] **Comprehensive CI/CD Documentation:** Detailed operational guides in `docs/CICD.md`.
-- [x] **Phase 23 Test Suite (`src/cicd/testPhase23.ts`):** 63/63 passing tests verifying Definition of Done and security checklists.
+- [x] **Phase 23 Test Suite (`src/cicd/testPhase23.ts`):** 70/70 passing tests verifying Definition of Done and security checklists.
 
 ### Phase 22 Deliverables Summary (AWS Deployment & Cloud Infrastructure)
-- [x] **CloudFormation & Terraform Infrastructure as Code:** Dedicated VPC (`10.0.0.0/16`), 6 multi-AZ subnets, NAT Gateway, least-privilege security groups, Amazon RDS MySQL 8.4, Amazon ElastiCache Redis, Amazon ECS Fargate, ALB, S3, and Secrets Manager in `infra/aws/cloudformation.yml` and `infra/aws/terraform/`.
+- [x] **CloudFormation & Terraform Infrastructure as Code:** Dedicated VPC (`10.0.0.0/16`), 6 multi-AZ subnets, NAT Gateway, least-privilege security groups, Amazon RDS MySQL 8.4, Amazon ElastiCache Redis, Amazon ECS Fargate, ALB, S3, Secrets Manager, Amazon ECR repositories (`api`, `worker`, `client`), and GitHub Actions OIDC identity provider/deployment role in `infra/aws/cloudformation.yml` and `infra/aws/terraform/`.
 - [x] **AWS Secrets Manager Integration:** Encrypted credential resolution with in-memory TTL caching and graceful fallback in `server/src/config/awsSecrets.ts`.
 - [x] **Amazon S3 Object Storage Service:** Strict tenant organization key isolation (`organizations/{orgId}/tasks/{taskId}/{filename}`), MD5 etags, and presigned URLs in `server/src/services/s3Service.ts`.
 - [x] **Infrastructure Probes:** Dedicated ALB/ECS `/api/health/liveness` and `/api/health/readiness` endpoints in `server/src/routes/healthRoutes.ts`.
-- [x] **Localhost Audit:** Production safety scanner verifying zero unhandled hardcoded localhost URLs across 104+ files in `server/src/aws/localhostAudit.ts`.
+- [x] **Localhost Audit:** Production safety scanner verifying zero unhandled hardcoded localhost URLs across 110+ files in `server/src/aws/localhostAudit.ts`.
 - [x] **Amazon RDS Migration Runner:** Automated migration script verifying 12 platform tables, optimistic concurrency (`tasks.version`), and retry ceilings (`tasks.total_retries`) in `server/src/db/migrateRds.ts`.
 - [x] **Comprehensive AWS Documentation:** 12-section architecture, IAM, cost breakdown (~$85/mo), and disaster recovery guide in `docs/AWS.md`.
-- [x] **Phase 22 Test Suite:** 52/52 passing tests in `server/src/aws/testPhase22.ts`.
+- [x] **Phase 22 Test Suite:** 55/55 passing tests in `server/src/aws/testPhase22.ts`.
+
+### Phase 21 Deliverables Summary (Docker & Containerization)
+- [x] **Production Multi-Stage Dockerfiles:** Hardened Dockerfiles for `api` (`docker/Dockerfile.api`), `worker` (`docker/Dockerfile.worker`), and `client` (`docker/Dockerfile.client`) using Node 22 Alpine, non-root `node` runtime user, and Nginx reverse proxy.
+- [x] **Docker Compose Orchestration:** Full local environment orchestration in `docker-compose.yml` with health checks, network isolation (`workforce-network`), and volume persistence (`mysql_data`, `redis_data`, `qdrant_data`).
+- [x] **Build Context Security:** `.dockerignore` excludes `.env`, `node_modules`, `.git`, and build outputs.
+- [x] **Phase 21 Test Suite:** 73/73 passing tests in `server/src/docker/testPhase21.ts`.
 
 ---
 

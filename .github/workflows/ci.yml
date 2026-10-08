@@ -177,3 +177,70 @@ jobs:
 
       - name: Build Client Docker Image
         run: docker build -f docker/Dockerfile.client -t ai-workforce-client:ci-test .
+
+      - name: Verify API Container Runtime & Liveness Probe
+        run: |
+          docker run -d --name test-api -p 3000:3000 \
+            -e NODE_ENV=test \
+            -e PORT=3000 \
+            -e JWT_SECRET=test_jwt_secret_ci_verification_key_32bytes \
+            ai-workforce-api:ci-test
+          
+          echo "Awaiting API container readiness..."
+          HEALTHY=0
+          for i in {1..20}; do
+            if curl -sf http://localhost:3000/api/health/liveness; then
+              echo "API container successfully responded to /api/health/liveness"
+              HEALTHY=1
+              break
+            fi
+            sleep 1
+          done
+          
+          if [ $HEALTHY -ne 1 ]; then
+            echo "API container failed liveness health check!"
+            docker logs test-api
+            exit 1
+          fi
+
+          curl -sf http://localhost:3000/api/health
+          docker rm -f test-api
+
+      - name: Verify Client Container Runtime & Nginx Health
+        run: |
+          docker run -d --name test-client -p 8080:80 \
+            ai-workforce-client:ci-test
+          
+          echo "Awaiting Client container readiness..."
+          CLIENT_HEALTHY=0
+          for i in {1..10}; do
+            if curl -sf http://localhost:8080/healthz; then
+              echo "Client Nginx container successfully responded to /healthz"
+              CLIENT_HEALTHY=1
+              break
+            fi
+            sleep 1
+          done
+          
+          if [ $CLIENT_HEALTHY -ne 1 ]; then
+            echo "Client container failed healthz check!"
+            docker logs test-client
+            exit 1
+          fi
+
+          docker rm -f test-client
+
+      - name: Verify Headless Worker Container Security & Process Execution
+        run: |
+          RUNNING_USER=$(docker run --rm ai-workforce-worker:ci-test whoami)
+          if [ "$RUNNING_USER" != "node" ]; then
+            echo "Security violation: Worker container running as '$RUNNING_USER' instead of unprivileged 'node' user"
+            exit 1
+          fi
+          echo "Worker unprivileged non-root user verified: $RUNNING_USER"
+          docker run --rm ai-workforce-worker:ci-test node -e "console.log('Worker daemon runtime verified OK')"
+
+      - name: Clean Up Test Containers
+        if: always()
+        run: docker rm -f test-api test-client 2>/dev/null || true
+

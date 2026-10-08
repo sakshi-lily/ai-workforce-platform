@@ -202,3 +202,64 @@ resource "aws_secretsmanager_secret" "app_secrets" {
 resource "aws_ecs_cluster" "cluster" {
   name = "${var.environment}-ai-workforce-cluster"
 }
+
+# 6. ECR Repositories
+resource "aws_ecr_repository" "api" {
+  name                 = "ai-workforce-api"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+resource "aws_ecr_repository" "worker" {
+  name                 = "ai-workforce-worker"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+resource "aws_ecr_repository" "client" {
+  name                 = "ai-workforce-client"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
+# 7. GitHub Actions OIDC Provider & Deployment Role
+resource "aws_iam_openid_connect_provider" "github" {
+  url             = "https://token.actions.githubusercontent.com"
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1", "1c5878a670017e82329311ad4fa81e70ab99667a"]
+}
+
+resource "aws_iam_role" "github_actions_deploy" {
+  name = "${var.environment}-github-actions-deploy-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = aws_iam_openid_connect_provider.github.arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          }
+          StringLike = {
+            "token.actions.githubusercontent.com:sub" = "repo:sakshi-lily/ai-workforce-platform:*"
+          }
+        }
+      }
+    ]
+  })
+}
+

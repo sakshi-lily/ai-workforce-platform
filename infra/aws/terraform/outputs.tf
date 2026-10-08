@@ -17,3 +17,24 @@ output "s3_bucket" {
   description = "S3 Artifacts Bucket Name"
   value       = aws_s3_bucket.artifacts.id
 }
+
+output "ecr_api_repository_url" {
+  description = "ECR API Repository URL"
+  value       = aws_ecr_repository.api.repository_url
+}
+
+output "ecr_worker_repository_url" {
+  description = "ECR Worker Repository URL"
+  value       = aws_ecr_repository.worker.repository_url
+}
+
+output "ecr_client_repository_url" {
+  description = "ECR Client Repository URL"
+  value       = aws_ecr_repository.client.repository_url
+}
+
+output "github_deploy_role_arn" {
+  description = "GitHub Actions OIDC Deploy Role ARN"
+  value       = aws_iam_role.github_actions_deploy.arn
+}
+

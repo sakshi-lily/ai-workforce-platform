@@ -53,6 +53,22 @@ async function runPhase21TestSuite() {
   assert(serverDockerfile.includes("HEALTHCHECK"), "Server Dockerfile defines native container healthcheck");
   assert(serverDockerfile.includes("dist/server.js"), "Server Dockerfile default CMD executes compiled Express API");
 
+  // Verify dedicated container Dockerfiles in docker/
+  const dockerApiFile = fs.readFileSync(path.join(PROJECT_ROOT, "docker/Dockerfile.api"), "utf-8");
+  assert(dockerApiFile.includes("FROM node:22-alpine AS builder"), "docker/Dockerfile.api implements builder stage");
+  assert(dockerApiFile.includes("USER node"), "docker/Dockerfile.api enforces unprivileged node user");
+  assert(dockerApiFile.includes("EXPOSE 3000"), "docker/Dockerfile.api exposes port 3000");
+
+  const dockerWorkerFile = fs.readFileSync(path.join(PROJECT_ROOT, "docker/Dockerfile.worker"), "utf-8");
+  assert(dockerWorkerFile.includes("FROM node:22-alpine AS builder"), "docker/Dockerfile.worker implements builder stage");
+  assert(dockerWorkerFile.includes("USER node"), "docker/Dockerfile.worker enforces unprivileged node user");
+  assert(dockerWorkerFile.includes("dist/jobs/workerRunner.js"), "docker/Dockerfile.worker executes background worker daemon");
+
+  const dockerClientFile = fs.readFileSync(path.join(PROJECT_ROOT, "docker/Dockerfile.client"), "utf-8");
+  assert(dockerClientFile.includes("FROM node:22-alpine AS builder"), "docker/Dockerfile.client implements builder stage");
+  assert(dockerClientFile.includes("FROM nginx:alpine AS runner"), "docker/Dockerfile.client implements Nginx runner stage");
+  assert(dockerClientFile.includes("EXPOSE 80"), "docker/Dockerfile.client exposes port 80");
+
   // --- 2. Client Dockerfile Architecture & Web Server ---
   console.log("\n--- 2. Client Dockerfile Architecture & Web Server ---");
   const clientDockerfile = fs.readFileSync(path.join(CLIENT_ROOT, "Dockerfile"), "utf-8");
@@ -61,6 +77,7 @@ async function runPhase21TestSuite() {
   assert(clientDockerfile.includes("COPY --from=builder /app/dist /usr/share/nginx/html"), "Client Dockerfile copies compiled SPA assets to Nginx html root");
   assert(clientDockerfile.includes("EXPOSE 80"), "Client Dockerfile exposes web port 80");
   assert(clientDockerfile.includes("HEALTHCHECK"), "Client Dockerfile defines web server healthcheck");
+
 
   // --- 3. Build Context Security & .dockerignore Rules ---
   console.log("\n--- 3. Build Context Security & .dockerignore Rules ---");
