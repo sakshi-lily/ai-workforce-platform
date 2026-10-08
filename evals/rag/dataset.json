@@ -1,0 +1,41 @@
+[
+  {
+    "id": "rag-eval-001",
+    "query": "What are the criteria for qualifying an enterprise customer?",
+    "expectedSources": ["S1"],
+    "expectedAnswerElements": [
+      "verified organization tax ID",
+      "active corporate email domain",
+      "minimum annual recurring contract value of $25,000"
+    ],
+    "groundedSample": "Enterprise qualification requires a verified organization tax ID, active corporate email domain, and minimum annual contract value of $25,000 [S1].",
+    "fabricatedCitationSample": "Enterprise qualification requires $10,000 minimum spend [S99].",
+    "ungroundedClaimSample": "Enterprise qualification guarantees a 90-day free pilot for all fortune 500 companies [S1]."
+  },
+  {
+    "id": "rag-eval-002",
+    "query": "When is compliance approval required for customer workflows?",
+    "expectedSources": ["S2"],
+    "expectedAnswerElements": [
+      "Tier-3 risk",
+      "Senior Risk Officer",
+      "manual compliance approval"
+    ],
+    "groundedSample": "Accounts flagged under Tier-3 risk require manual compliance approval by a Senior Risk Officer before automated task execution can proceed [S2].",
+    "fabricatedCitationSample": "Tier-3 accounts are automatically approved by AI [S4].",
+    "ungroundedClaimSample": "Compliance approval can be bypassed by standard developers on weekends."
+  },
+  {
+    "id": "rag-eval-003",
+    "query": "What governance governs outbound customer emails?",
+    "expectedSources": ["S3"],
+    "expectedAnswerElements": [
+      "staged as drafts",
+      "human-in-the-loop approval",
+      "outbound email communications"
+    ],
+    "groundedSample": "Outbound emails involving customer data must be staged as drafts and require explicit human-in-the-loop approval before transmission [S3].",
+    "fabricatedCitationSample": "Emails are sent automatically by the worker daemon without human review [S1].",
+    "ungroundedClaimSample": "Emails can be sent directly to external recipients without draft staging."
+  }
+]

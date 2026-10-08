@@ -1,0 +1,35 @@
+[
+  {
+    "id": "agent-eval-001",
+    "taskName": "Verify Customer & Retrieve Contract Terms",
+    "prompt": "Verify customer CUST-1002 in MySQL and retrieve the qualification policy from internal knowledge.",
+    "expectedPlanSteps": ["verify_customer", "retrieve_knowledge", "synthesize_summary"],
+    "requiredTools": ["mysqlVerifyCustomer", "ragQuery"],
+    "minToolCalls": 2,
+    "maxAllowedToolCalls": 4,
+    "expectedOutcome": "COMPLETED",
+    "disallowedTools": ["gmailSend", "calculate"]
+  },
+  {
+    "id": "agent-eval-002",
+    "taskName": "Mathematical Calculation",
+    "prompt": "Calculate (450 * 12) + 1800 for the customer contract budget.",
+    "expectedPlanSteps": ["evaluate_expression"],
+    "requiredTools": ["calculate"],
+    "minToolCalls": 1,
+    "maxAllowedToolCalls": 2,
+    "expectedOutcome": "COMPLETED",
+    "disallowedTools": ["gmailSend", "mysqlVerifyCustomer"]
+  },
+  {
+    "id": "agent-eval-003",
+    "taskName": "Draft External Notification",
+    "prompt": "Prepare an email draft to client@enterprise.com informing them of the qualification review.",
+    "expectedPlanSteps": ["draft_email", "await_human_approval"],
+    "requiredTools": ["gmailCreateDraft"],
+    "minToolCalls": 1,
+    "maxAllowedToolCalls": 3,
+    "expectedOutcome": "WAITING_FOR_APPROVAL",
+    "disallowedTools": ["gmailSend"]
+  }
+]

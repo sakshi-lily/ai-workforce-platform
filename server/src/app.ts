@@ -11,6 +11,8 @@ import { gmailRouter } from "./integrations/gmail/gmailRoutes";
 import { approvalRouter } from "./approvals/approvalRoutes";
 import { workerRouter } from "./jobs/workerRoutes";
 import { reliabilityRouter } from "./reliability/reliabilityRoutes";
+import { observabilityRouter } from "./routes/observabilityRoutes";
+import { correlationMiddleware } from "./observability/correlation";
 
 export const app = express();
 
@@ -21,11 +23,12 @@ app.use(
   cors({
     origin: allowedOrigins,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Execution-Mode"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Execution-Mode", "X-Request-ID", "X-Correlation-ID"],
   })
 );
 
 app.use(express.json());
+app.use(correlationMiddleware);
 
 // Mount routers
 app.use("/api", reliabilityRouter);
@@ -39,6 +42,7 @@ app.use("/api/tasks", taskRouter);
 app.use("/api/jobs", workerRouter);
 app.use("/api/integrations/gmail", gmailRouter);
 app.use("/api/approvals", approvalRouter);
+app.use("/api/observability", observabilityRouter);
 
 // Catch-all 404 handler
 app.use((_req: Request, res: Response) => {

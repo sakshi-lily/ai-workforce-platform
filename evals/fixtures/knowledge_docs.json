@@ -1,0 +1,46 @@
+[
+  {
+    "id": "doc-001",
+    "title": "Customer Qualification Policy",
+    "category": "compliance",
+    "chunks": [
+      {
+        "id": "chunk-101",
+        "sourceId": "S1",
+        "content": "Enterprise customer qualification requires a verified organization tax ID, active corporate email domain, and a minimum annual recurring contract value of $25,000.",
+        "metadata": {
+          "sourceName": "customer-qualification-policy",
+          "section": "eligibility",
+          "version": "2.4"
+        }
+      },
+      {
+        "id": "chunk-102",
+        "sourceId": "S2",
+        "content": "Accounts flagged under Tier-3 risk require manual compliance approval by a Senior Risk Officer before automated task execution or workflow orchestration may proceed.",
+        "metadata": {
+          "sourceName": "customer-qualification-policy",
+          "section": "risk-governance",
+          "version": "2.4"
+        }
+      }
+    ]
+  },
+  {
+    "id": "doc-002",
+    "title": "External Communication and Email Policy",
+    "category": "security",
+    "chunks": [
+      {
+        "id": "chunk-201",
+        "sourceId": "S3",
+        "content": "Outbound email communications involving customer data or commercial terms must be staged as drafts and require explicit human-in-the-loop approval before transmission.",
+        "metadata": {
+          "sourceName": "email-security-policy",
+          "section": "outbound-governance",
+          "version": "1.1"
+        }
+      }
+    ]
+  }
+]
