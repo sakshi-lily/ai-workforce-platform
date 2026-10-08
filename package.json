@@ -4,6 +4,10 @@
   "private": true,
   "description": "Enterprise-Grade Governed AI Workforce Platform Monorepo Root",
   "scripts": {
+    "dev": "npm run dev:server",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "start": "npm --prefix server start",
     "build:server": "npm --prefix server run build",
     "build:client": "npm --prefix client run build",
     "build": "npm run build:server && npm run build:client",

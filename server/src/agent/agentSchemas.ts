@@ -135,6 +135,7 @@ export interface CreateAgentTaskInput {
 export interface AgentTaskEntity {
   id: string;
   user_id: string;
+  organization_id?: string;
   title: string;
   prompt: string;
   status: AgentLifecycleState;

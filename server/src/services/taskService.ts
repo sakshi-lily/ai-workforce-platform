@@ -10,6 +10,10 @@ import {
 } from "../agent/agentSchemas";
 import { AGENT_CONFIG } from "../agent/agentConfig";
 
+// In-memory task stores for development & offline degradation
+const inMemoryTasks: Map<string, AgentTaskEntity> = new Map();
+const inMemoryTaskSteps: Map<string, AgentTaskStepEntity[]> = new Map();
+
 /**
  * Creates a durable task in MySQL with initial status 'REQUESTED'.
  */
@@ -28,27 +32,48 @@ export async function createTask(input: {
   const priority = input.priority || "NORMAL";
   const initialStatus: AgentLifecycleState = "REQUESTED";
 
+  const memTask: AgentTaskEntity = {
+    id,
+    user_id: userId,
+    organization_id: organizationId,
+    title,
+    prompt,
+    status: initialStatus,
+    priority,
+    constraints_json: null,
+    final_report: null,
+    error_message: null,
+    prompt_tokens: 0,
+    completion_tokens: 0,
+    total_cost_usd: 0,
+    started_at: null,
+    completed_at: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
   const query = `
     INSERT INTO tasks (
       id, user_id, organization_id, title, prompt, status, priority, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW());
   `;
 
-  await pool.query<ResultSetHeader>(query, [
-    id,
-    userId,
-    organizationId,
-    title,
-    prompt,
-    initialStatus,
-    priority,
-  ]);
-
-  const createdTask = await getTaskRecordOnly(id);
-  if (!createdTask) {
-    throw new Error(`Failed to retrieve task immediately after creation for ID: ${id}`);
+  try {
+    await pool.query<ResultSetHeader>(query, [
+      id,
+      userId,
+      organizationId,
+      title,
+      prompt,
+      initialStatus,
+      priority,
+    ]);
+  } catch {
+    inMemoryTasks.set(id, memTask);
   }
 
+  inMemoryTasks.set(id, memTask);
+  const createdTask = (await getTaskRecordOnly(id)) || memTask;
   return createdTask;
 }
 
@@ -106,8 +131,25 @@ export async function updateTaskState(
 
   params.push(taskId);
 
-  const query = `UPDATE tasks SET ${setClauses.join(", ")} WHERE id = ?;`;
-  await pool.query<ResultSetHeader>(query, params);
+  try {
+    const query = `UPDATE tasks SET ${setClauses.join(", ")} WHERE id = ?;`;
+    await pool.query<ResultSetHeader>(query, params);
+  } catch {
+    // Non-blocking in offline mode
+  }
+
+  const mem = inMemoryTasks.get(taskId);
+  if (mem) {
+    mem.status = status;
+    mem.updated_at = new Date().toISOString();
+    if (updates?.startedAt) mem.started_at = mem.started_at || new Date().toISOString();
+    if (updates?.completedAt) mem.completed_at = new Date().toISOString();
+    if (updates?.finalReport !== undefined) mem.final_report = updates.finalReport;
+    if (updates?.errorMessage !== undefined) mem.error_message = updates.errorMessage;
+    if (updates?.promptTokens !== undefined) mem.prompt_tokens = (mem.prompt_tokens || 0) + updates.promptTokens;
+    if (updates?.completionTokens !== undefined) mem.completion_tokens = (mem.completion_tokens || 0) + updates.completionTokens;
+    if (updates?.totalCostUsd !== undefined) mem.total_cost_usd = (mem.total_cost_usd || 0) + updates.totalCostUsd;
+  }
 }
 
 /**
@@ -120,72 +162,84 @@ export async function persistTaskSteps(
 ): Promise<AgentTaskStepEntity[]> {
   if (steps.length === 0) return [];
 
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
+  const insertedSteps: AgentTaskStepEntity[] = [];
 
-    const insertedSteps: AgentTaskStepEntity[] = [];
+  for (const step of steps) {
+    const stepId = crypto.randomUUID();
+    const title = step.title || `Step ${step.order}`;
+    const description = step.description;
+    const stepOrder = step.order;
+    const status = "PENDING";
 
-    for (const step of steps) {
-      const stepId = crypto.randomUUID();
-      const title = step.title || `Step ${step.order}`;
-      const description = step.description;
-      const stepOrder = step.order;
-      const status = "PENDING";
-
-      const query = `
-        INSERT INTO task_steps (
-          id, task_id, step_order, title, description, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, NOW());
-      `;
-
-      await connection.query<ResultSetHeader>(query, [
-        stepId,
-        taskId,
-        stepOrder,
-        title,
-        description,
-        status,
-      ]);
-
-      insertedSteps.push({
-        id: stepId,
-        task_id: taskId,
-        step_order: stepOrder,
-        title,
-        description,
-        status,
-        tool_name: null,
-        input_data: null,
-        output_data: null,
-        error_message: null,
-        started_at: null,
-        completed_at: null,
-        created_at: new Date().toISOString(),
-      });
-    }
-
-    await connection.commit();
-    return insertedSteps;
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
+    insertedSteps.push({
+      id: stepId,
+      task_id: taskId,
+      step_order: stepOrder,
+      title,
+      description,
+      status,
+      tool_name: null,
+      input_data: null,
+      output_data: null,
+      error_message: null,
+      started_at: null,
+      completed_at: null,
+      created_at: new Date().toISOString(),
+    });
   }
+
+  try {
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      for (const step of insertedSteps) {
+        const query = `
+          INSERT INTO task_steps (
+            id, task_id, step_order, title, description, status, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, NOW());
+        `;
+
+        await connection.query<ResultSetHeader>(query, [
+          step.id,
+          step.task_id,
+          step.step_order,
+          step.title,
+          step.description,
+          step.status,
+        ]);
+      }
+
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+    } finally {
+      connection.release();
+    }
+  } catch {
+    // Non-blocking in offline mode
+  }
+
+  inMemoryTaskSteps.set(taskId, insertedSteps);
+  return insertedSteps;
 }
 
 /**
  * Retrieves an individual task record without joined relations.
  */
 export async function getTaskRecordOnly(taskId: string): Promise<AgentTaskEntity | null> {
-  const [rows] = await pool.query<RowDataPacket[]>(
-    "SELECT * FROM tasks WHERE id = ? LIMIT 1;",
-    [taskId]
-  );
+  try {
+    const [rows] = await pool.query<RowDataPacket[]>(
+      "SELECT * FROM tasks WHERE id = ? LIMIT 1;",
+      [taskId]
+    );
 
-  if (rows.length === 0) return null;
-  return rows[0] as AgentTaskEntity;
+    if (rows.length > 0) return rows[0] as AgentTaskEntity;
+  } catch {
+    // Non-blocking in offline mode
+  }
+
+  return inMemoryTasks.get(taskId) || null;
 }
 
 /**
@@ -216,11 +270,16 @@ export async function getTaskById(
   }
 
   // 1. Fetch steps
-  const [stepRows] = await pool.query<RowDataPacket[]>(
-    "SELECT * FROM task_steps WHERE task_id = ? ORDER BY step_order ASC;",
-    [taskId]
-  );
-  const steps = stepRows as AgentTaskStepEntity[];
+  let steps: AgentTaskStepEntity[] = [];
+  try {
+    const [stepRows] = await pool.query<RowDataPacket[]>(
+      "SELECT * FROM task_steps WHERE task_id = ? ORDER BY step_order ASC;",
+      [taskId]
+    );
+    steps = stepRows as AgentTaskStepEntity[];
+  } catch {
+    steps = inMemoryTaskSteps.get(taskId) || [];
+  }
 
   // 2. Parse final_report if it contains JSON plan
   let parsedPlan: AgentPlan | null = null;

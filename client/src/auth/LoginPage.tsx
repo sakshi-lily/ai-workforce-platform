@@ -18,6 +18,13 @@ export const LoginPage: React.FC = () => {
     }
   }, [authState, navigate]);
 
+  // Sync context error updates
+  useEffect(() => {
+    if (contextError) {
+      setErrorMessage(contextError);
+    }
+  }, [contextError]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password) {
@@ -31,8 +38,6 @@ export const LoginPage: React.FC = () => {
     const success = await login(email.trim(), password);
     if (success) {
       navigate('/app');
-    } else {
-      setErrorMessage(contextError || 'Invalid credentials. Please verify your email and password.');
     }
     setLoading(false);
   };
