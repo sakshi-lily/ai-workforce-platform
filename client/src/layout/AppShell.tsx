@@ -27,6 +27,9 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
     { name: 'Integrations', href: '/app/integrations', icon: '🔌' },
     { name: 'Settings', href: '/app/settings', icon: '⚙️' },
     { name: 'Governance', href: '/app/admin', icon: '🏛️' },
+    { name: 'Intelligence', href: '/app/intelligence', icon: '💡' },
+    { name: 'Workforce', href: '/app/orchestration', icon: '🤝' },
+    { name: 'Memory', href: '/app/memory', icon: '💾' },
   ];
 
   const handleLogout = async () => {

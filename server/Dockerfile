@@ -56,7 +56,7 @@ EXPOSE 3000
 
 # Container Healthcheck (Liveness Probe)
 HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:3000/api/health/liveness || exit 1
+  CMD curl -f http://127.0.0.1:3000/api/health/liveness || exit 1
 
 # Default entrypoint runs Express API (can be overridden by Compose for Worker)
 CMD ["node", "dist/server.js"]

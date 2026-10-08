@@ -13,6 +13,9 @@ import { workerRouter } from "./jobs/workerRoutes";
 import { reliabilityRouter } from "./reliability/reliabilityRoutes";
 import { observabilityRouter } from "./routes/observabilityRoutes";
 import { adminRouter } from "./routes/adminRoutes";
+import { intelligenceRouter } from "./routes/intelligenceRoutes";
+import { orchestrationRouter } from "./routes/orchestrationRoutes";
+import { memoryRouter, contextRouter } from "./routes/memoryRoutes";
 import { correlationMiddleware } from "./observability/correlation";
 
 export const app = express();
@@ -45,6 +48,10 @@ app.use("/api/integrations/gmail", gmailRouter);
 app.use("/api/approvals", approvalRouter);
 app.use("/api/observability", observabilityRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/intelligence", intelligenceRouter);
+app.use("/api/orchestration", orchestrationRouter);
+app.use("/api/memory", memoryRouter);
+app.use("/api/context", contextRouter);
 
 // Catch-all 404 handler
 app.use((_req: Request, res: Response) => {

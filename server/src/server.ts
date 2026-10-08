@@ -14,14 +14,15 @@ async function bootstrap() {
   }
 
   // 1. Start HTTP listener immediately so container liveness probes (/api/health/liveness) respond instantly
-  const server = app.listen(PORT, () => {
-    console.log(`[AI Workforce Platform Backend] Server is running on http://localhost:${PORT}`);
-    console.log(`[AI Workforce Platform Backend] Process health check: http://localhost:${PORT}/api/health`);
-    console.log(`[AI Workforce Platform Backend] Process liveness probe: http://localhost:${PORT}/api/health/liveness`);
-    console.log(`[AI Workforce Platform Backend] Process readiness probe: http://localhost:${PORT}/api/health/readiness`);
-    console.log(`[AI Workforce Platform Backend] Database health check: http://localhost:${PORT}/api/health/db`);
-    console.log(`[AI Workforce Platform Backend] Redis health check: http://localhost:${PORT}/api/health/redis`);
-    console.log(`[AI Workforce Platform Backend] Customers endpoint: http://localhost:${PORT}/api/customers`);
+  const HOST = process.env.HOST || "0.0.0.0";
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`[AI Workforce Platform Backend] Server is running on http://${HOST}:${PORT}`);
+    console.log(`[AI Workforce Platform Backend] Process health check: http://${HOST}:${PORT}/api/health`);
+    console.log(`[AI Workforce Platform Backend] Process liveness probe: http://${HOST}:${PORT}/api/health/liveness`);
+    console.log(`[AI Workforce Platform Backend] Process readiness probe: http://${HOST}:${PORT}/api/health/readiness`);
+    console.log(`[AI Workforce Platform Backend] Database health check: http://${HOST}:${PORT}/api/health/db`);
+    console.log(`[AI Workforce Platform Backend] Redis health check: http://${HOST}:${PORT}/api/health/redis`);
+    console.log(`[AI Workforce Platform Backend] Customers endpoint: http://${HOST}:${PORT}/api/customers`);
   });
 
   // 2. Asynchronously verify database seed data without blocking container liveness

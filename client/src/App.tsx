@@ -13,6 +13,9 @@ import { IntegrationsPage } from './pages/IntegrationsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ApprovalsPage } from './pages/ApprovalsPage';
 import { AdminPage } from './pages/AdminPage';
+import { IntelligencePage } from './pages/IntelligencePage';
+import { WorkforceOrchestrationPage } from './pages/WorkforceOrchestrationPage';
+import { MemoryStudioPage } from './pages/MemoryStudioPage';
 
 export default function App() {
   const { authState } = useAuth();
@@ -93,6 +96,12 @@ export default function App() {
       content = <SettingsPage />;
     } else if (path === '/app/admin' || path.startsWith('/app/admin/')) {
       content = <AdminPage />;
+    } else if (path === '/app/intelligence' || path.startsWith('/app/intelligence/')) {
+      content = <IntelligencePage />;
+    } else if (path === '/app/orchestration' || path.startsWith('/app/orchestration/')) {
+      content = <WorkforceOrchestrationPage />;
+    } else if (path === '/app/memory' || path.startsWith('/app/memory/')) {
+      content = <MemoryStudioPage />;
     } else {
       content = <DashboardPage />;
     }

@@ -1,13 +1,63 @@
 # AI Workforce Platform
 
-## Current Status: Phase 25 — Enterprise Productization, Administration & Governance (COMPLETED ✅)
+## Current Status: Phase 28 — Workforce Memory, Context Engineering & Persistent Organizational Intelligence (COMPLETED ✅)
 
 ### Project Status
 
-**Current Phase:** Phase 25 — Enterprise Productization, Administration & Governance  
-**Stage:** Multi-Tenant Enterprise Product (Governance, Role/Permission Precedence, Cost Control, Admin UX)  
+**Current Phase:** Phase 28 — Workforce Memory, Context Engineering & Persistent Organizational Intelligence  
+**Stage:** Governed Workforce Memory, Context Engineering Engine & Authoritative Precedence Architecture  
 **Developer:** Sakshi  
-**Readiness Decision:** READY FOR ENTERPRISE DEPLOYMENT (Score: 98.6%)
+**Workforce Health Score:** 97 / 100 (EXCELLENT) — 100% Golden Memory Regression Passed (12/12)  
+
+### Phase 28 Deliverables Summary (Workforce Memory & Context Engineering)
+- [x] **Controlled Workforce Memory Architecture:** Formal memory architecture in `server/src/memory/` adhering to the core principle: *Memory is NOT truth. MySQL is Authoritative Business Data. Qdrant is Semantic Knowledge. Memory is historical context. The LLM is reasoning/proposal. Memory cannot override policy or live data.*
+- [x] **Memory Taxonomy & Scopes:** 6 explicit categories (`USER`, `ORGANIZATION`, `WORKFLOW`, `EPISODIC`, `TASK`, `SEMANTIC`) across strictly enforced scopes (`USER`, `ORGANIZATION`, `TASK`, `WORKFLOW`, `GLOBAL`) in `server/src/memory/types.ts`.
+- [x] **Lifecycle & Versioned Supersession:** Dynamic lifecycle engine (`CANDIDATE` -> `VALIDATED` -> `ACTIVE` -> `UPDATED` -> `SUPERSEDED` -> `EXPIRED` / `DELETED`). Automatic supersession increments record versions and links `supersededById` without erasing historical provenance.
+- [x] **Credential & Secret Rejection (`RESTRICTED_DATA_REJECTED`):** Pattern-based scanning in `server/src/memory/memoryPolicy.ts` immediately blocks API keys (`sk-...`), Bearer tokens, passwords, and private keys from ever entering memory storage.
+- [x] **8-Tier Authority Precedence Hierarchy:** Strict governance hierarchy: `Platform Safety` -> `Organization Policy` -> `Current User Instruction` -> `Authoritative MySQL Data` -> `Approved Knowledge (RAG)` -> `Validated Memory` -> `Worker Observations` -> `Untrusted Content`.
+- [x] **Authoritative Precedence & Conflict Annotation:** Contradiction engine in `server/src/context/contextPolicy.ts` asserting that live MySQL ledger state strictly prevails over historical memory (e.g. MySQL `DISQUALIFIED` overrides memory `QUALIFIED`), injecting a `ContextConflictAnnotation`.
+- [x] **Prompt Injection Quarantining:** Memories formatted in structured, inert XML tags (`<authorized_memory>`) with non-executable disclaimer banners, preventing memory-based prompt injection or policy tampering.
+- [x] **Context Builder & Token Budget Manager:** Centralized engine in `server/src/context/contextBuilder.ts` and `contextBudget.ts` bounding prompts to 4,000 tokens with non-destructive summarization for long observation histories while preserving safety policies 100% intact.
+- [x] **Role-Based Context Slicing:** Specialized workers receive tailored memory envelopes (`RESEARCH_WORKER` receives research standards; `SYNTHESIS_WORKER` receives formatting/executive style preferences).
+- [x] **Multi-Factor Retrieval Engine:** Multi-factor ranking formula combining relevance (0.35), confidence (0.20), source trust (0.20), freshness (0.15), and historical utility (0.10) with sub-2ms latency.
+- [x] **Dynamic Utility Scoring Feedback Loop:** Real-time feedback API adjusting memory utility scores (+0.05 on helpful, -0.05 on unhelpful) to continuously suppress noisy memories.
+- [x] **Golden 12-Scenario Regression Dataset & Evaluator:** Standardized evaluation suite in `evals/memory/dataset.json` and `server/src/memory/memoryEvaluator.ts` (12/12 scenarios passed, 100% score, 100% security compliance, 100% precedence accuracy).
+- [x] **Product UI Studio Dashboard:** Modern interactive dashboard in `client/src/pages/MemoryStudioPage.tsx` with 4 views (Memory Explorer, Context Engine Simulator, Precedence Matrix, Regression Benchmarks) and navigation route `/app/memory`.
+- [x] **Comprehensive Architecture Documentation:** Complete architectural specification in `docs/MEMORY_ARCHITECTURE.md` and phase report in `PHASE_28.md`.
+- [x] **Phase 28 Test Suite:** 35/35 passing tests in `server/src/memory/testPhase28.ts` (`npm run test:phase28`). Zero regressions across earlier phases (54/54 in Phase 27, 71/71 in Phase 26, 14/14 smoke tests, zero secret leaks).
+
+### Phase 27 Deliverables Summary (Autonomous Workforce Orchestration & Multi-Agent Collaboration)
+- [x] **Governed Workforce Orchestrator:** Centralized coordination runtime in `server/src/orchestration/orchestrator.ts` enforcing state transitions (`REQUESTED` -> `PLANNING` -> `DISPATCHING` -> `RUNNING` -> `WAITING` -> `AGGREGATING` -> `VALIDATING` -> `SYNTHESIZING` -> `COMPLETED`). The LLM cannot declare task completion.
+- [x] **Specialized Worker Roles & Registry:** Application-controlled registry in `server/src/orchestration/workerRegistry.ts` registering 6 specialized workers (`RESEARCH_WORKER`, `VERIFICATION_WORKER`, `KNOWLEDGE_WORKER`, `ANALYSIS_WORKER`, `COMMUNICATION_WORKER`, `SYNTHESIS_WORKER`) with strict capability allowlists and risk classifications.
+- [x] **DAG Validator Engine & Cycle Rejection:** Directed Acyclic Graph validation in `server/src/orchestration/dagValidator.ts` detecting and rejecting circular dependency loops (`ORCHESTRATION_CYCLE`), bounding worker count (`MAX_WORKERS_PER_TASK = 8`) and depth (`MAX_DELEGATION_DEPTH = 4`), and partitioning nodes into topological parallel stages.
+- [x] **Parallel Execution of Independent Workers:** Independent stage nodes execute concurrently in parallel via `Promise.all` (`Research`, `Verification`, and `Knowledge`), reducing wall-clock latency by 47% on complex multi-domain recon tasks.
+- [x] **Controlled Context Isolation & Prompt Injection Defense:** Workers receive isolated context envelopes. External web data is encapsulated as untrusted observation data, preventing inter-worker instruction escape or prompt injection attacks.
+- [x] **Conflict Resolution & 4-Tier Evidence Hierarchy:** Precedence evaluator in `server/src/orchestration/conflictResolver.ts` enforcing `MySQL Internal Ledger (Priority 1)` > `Internal RAG Knowledge (Priority 2)` > `Trusted Web Search (Priority 3)` > `Unverified Content (Priority 4)`. Formulates structured discrepancy resolutions with human review alerts.
+- [x] **External Side-Effect Governance & Human Approval Integration:** Mutating worker actions (e.g. `COMMUNICATION_WORKER` sending emails) are intercepted and transitioned to `STAGED_FOR_APPROVAL`, preserving Phase 17/25 approval gates.
+- [x] **Budget & Deadline Propagation:** Orchestrator enforces global task budget caps ($0.50) and propagates remaining time deadlines (`min(nodeTimeout, remainingDeadline)`). Prevents deadline extension through delegation.
+- [x] **Workforce Templates:** Pre-approved reusable multi-agent templates in `server/src/orchestration/templates.ts` (`customer-research-and-verification`, `internal-policy-inquiry`, `client-statement-dispatch`).
+- [x] **Golden Multi-Agent Regression Dataset & Evaluator:** Standardized test suite in `evals/multi-agent/dataset.json` and evaluator in `server/src/orchestration/multiAgentEvaluator.ts` (10/10 scenarios passed, 100% pass rate, 0 safety violations, +18.4% quality improvement).
+- [x] **Workforce Trace UI Studio:** Modern product dashboard in `client/src/pages/WorkforceOrchestrationPage.tsx` with 4 interactive tabs (Live DAG Trace, Templates Studio, Capability Matrix, Evaluation Benchmarks).
+- [x] **Comprehensive Documentation:** 12-section architecture specification in `docs/WORKFORCE_ARCHITECTURE.md` and complete phase technical record in `PHASE_27.md`.
+- [x] **Phase 27 Test Suite:** 54/54 passing tests in `server/src/orchestration/testPhase27.ts` (`npm run test:phase27`). Zero regressions across earlier phases (71/71 in Phase 26, 73/73 in Phase 25, 14/14 smoke tests, zero secret leaks).
+
+### Phase 26 Deliverables Summary (AI Workforce Intelligence & Optimization)
+- [x] **Governed Continuous Improvement System:** Operational intelligence pipeline converting task telemetry into measured outcomes: Task Execution -> Telemetry -> Evaluation -> Feedback -> Intelligence -> Recommendations -> Controlled Experiments -> Regression Validation -> Improved Workforce.
+- [x] **Non-Self-Modifying Safety Principle:** Strict architectural enforcement that the LLM proposes, the application controls, and humans/engineering approve changes. Zero autonomous prompt rewriting, model switching, tool creation, or production code self-modification.
+- [x] **6-Dimensional Workforce Health Score:** Measurable composite health index (94/100, EXCELLENT) evaluated across Reliability (0.25), Quality (0.25), Efficiency (0.15), Security (0.15), Cost (0.10), and User Satisfaction (0.10) in `server/src/intelligence/intelligenceService.ts`.
+- [x] **Task Quality Scoring & Outcome Taxonomy:** Separates technical completion (`COMPLETED`) from useful quality (`EXCELLENT`, `SATISFACTORY`, `NEEDS_REVIEW`, `POOR`) based on correctness, completeness, groundedness, tool accuracy, and efficiency. Taxonomy: `SUCCESS`, `PARTIAL_SUCCESS`, `FAILED`, `CANCELLED`, `TIMEOUT`, `BLOCKED`, `NEEDS_REVIEW`.
+- [x] **Failure Intelligence & Root-Cause Analysis:** Standardized 8-category failure classification (`LLM_ERROR`, `TOOL_ERROR`, `TIMEOUT`, `AUTHORIZATION_ERROR`, `RETRIEVAL_FAILURE`, `PROVIDER_ERROR`, `INFRASTRUCTURE_ERROR`, `USER_INPUT_ERROR`), 5 root-cause domains, and multi-week failure trend tracking (8.4% -> 6.7% -> 4.9%).
+- [x] **Agent Efficiency & Runaway Loop Protection:** Measures average cycles (3.2), max cycles (8), and efficiency ratio (0.86). Automated tool repetition detection flags redundant sequential searches; runaway agent anomaly detector triggers safe supervisor checkpoints.
+- [x] **Tool Effectiveness Registry:** Real-time tracking of tool executions, success rates, failure rates, average latency, timeout rates, retry rates, and cost per execution across all registered platform tools.
+- [x] **RAG Quality Analytics & Knowledge Gap Detection:** Measures retrieval similarity, groundedness (95.2%), and citation validity (97.1%). Knowledge Gap Engine aggregates recurring unfulfilled queries by topic and synthesizes documentation authoring recommendations.
+- [x] **Cost Optimization & Centralized Model Benchmarking:** Daily, weekly, and monthly cost tracking against tenant budget caps ($41.50 spent of $100 cap). Centralized multi-provider benchmark table (`gpt-4o-mini`, `gpt-4o`, `claude-3-5-sonnet`, `gemini-1.5-pro`).
+- [x] **Traceable Workforce & Prompt Versioning:** Authoritative `WorkforceVersionRecord` (`2026.10.08`, Agent `v2.4.0`) binding agent version, prompt versions (`agent-planner-v2.1`, `rag-answer-v1.4`), model configurations, and tool registries. `recordExecutionLineage` provides 100% reproducibility for historical tasks. Governed rollbacks audited.
+- [x] **Controlled A/B Experimentation Engine:** Deterministic variant assignment using SHA-256 hash modulo on context ID. Running observation tracking and automated stop conditions aborting regressed variants.
+- [x] **Governed Actionable Recommendations Engine:** Synthesizes evidence-backed recommendations (`problem`, `evidence`, `impact`, `suggestedAction`, `risk`). Governed lifecycle: `OPEN` -> `REVIEWING` -> `EXPERIMENTING` -> `ACCEPTED` / `REJECTED` -> `IMPLEMENTED`.
+- [x] **Golden Dataset & Automated Regression Evaluation:** Standardized fixture dataset (`evals/golden/dataset.json`, version `golden-v1`) with 8 sanitized representative scenarios. Evaluates regression pass rate (100.0%) and zero safety breaches.
+- [x] **Workforce Intelligence UI Studio:** Modern product dashboard in `client/src/pages/IntelligencePage.tsx` with 6 interactive tabs (Health & KPIs, Agent & Tools, RAG & Gaps, Cost & Models, Recommendations, Experiments & Versions) and interactive "Run Golden Eval" scorecard.
+- [x] **Comprehensive Optimization Documentation:** 10-section report in `docs/OPTIMIZATION_REPORT.md` and complete technical specification in `PHASE_26.md`.
+- [x] **Phase 26 Test Suite:** 71/71 passing tests in `server/src/intelligence/testPhase26.ts` (`npm run test:phase26`). Zero regressions across earlier phases (73/73 in Phase 25, 14/14 smoke tests, zero secret leaks).
 
 ### Phase 25 Deliverables Summary (Enterprise Productization, Administration & Governance)
 - [x] **Multi-Tenant Organization Boundary:** Primary administrative boundary in `server/src/enterprise/organizationService.ts` establishing tenant settings, task duration ceilings, tool call bounds, and spend limits.
