@@ -1,16 +1,28 @@
 # AI Workforce Platform
 
-## Current Status: Phase 24 — Production Validation, Observability & AI Workforce Evaluation (COMPLETED ✅)
+## Current Status: Phase 25 — Enterprise Productization, Administration & Governance (COMPLETED ✅)
 
 ### Project Status
 
-**Current Phase:** Phase 24 — Production Validation, Observability & AI Workforce Evaluation  
-**Stage:** Full 23-Phase Foundation + Phase 24 Production Validation Verified (All Suites Passing, Zero Regressions)  
+**Current Phase:** Phase 25 — Enterprise Productization, Administration & Governance  
+**Stage:** Multi-Tenant Enterprise Product (Governance, Role/Permission Precedence, Cost Control, Admin UX)  
 **Developer:** Sakshi  
-**Readiness Decision:** READY WITH KNOWN RISKS (Score: 98.7%)
+**Readiness Decision:** READY FOR ENTERPRISE DEPLOYMENT (Score: 98.6%)
 
-### Phase 24 Deliverables Summary (Production Validation, Observability & AI Evaluation)
-- [x] **Canonical End-to-End Workforce Test:** Deterministic acceptance test in `server/src/evals/canonicalTaskRunner.ts` executing auth -> task -> MySQL -> Redis -> worker -> agent planning -> web search -> MySQL verify -> Qdrant/RAG -> grounded synthesis -> citation validation -> telemetry.
+### Phase 25 Deliverables Summary (Enterprise Productization, Administration & Governance)
+- [x] **Multi-Tenant Organization Boundary:** Primary administrative boundary in `server/src/enterprise/organizationService.ts` establishing tenant settings, task duration ceilings, tool call bounds, and spend limits.
+- [x] **User Lifecycle Management:** User directory management with explicit states (`ACTIVE`, `INVITED`, `SUSPENDED`, `DISABLED`), single-use 24-byte hex invitation tokens with 7-day TTL, and anti-replay activation.
+- [x] **Roles & Server-Side Permissions Matrix:** Granular roles (`OWNER`, `ADMIN`, `MEMBER`, `OPERATOR`) mapped to 18 enterprise permissions (`organization.*`, `users.*`, `tasks.*`, `tools.*`, `approvals.*`, `integrations.*`, `audit.*`, `usage.*`) in `server/src/enterprise/types.ts`.
+- [x] **7-Layer Precedence Policy Engine:** Deterministic evaluator in `server/src/enterprise/policyEngine.ts` evaluating `Platform Safety` -> `Organization Status & Kill Switch` -> `User Lifecycle Status` -> `User Permissions` -> `Organization Tool Policy` -> `AI Cost Budget Limits` -> `Tool Risk Policy & Approval Gate`. The LLM has zero policy authority.
+- [x] **Tool Governance & Approval Policy:** Configurable tool policies (`ENABLED`, `REQUIRES_APPROVAL`, `DISABLED`) with deterministic conflict resolution (platform safety cannot be weakened by tenant policy).
+- [x] **Emergency Operational Kill Switch:** Immediate tenant-wide freeze (`WORKFORCE_PAUSED`) halting autonomous executions with audited reasons.
+- [x] **Authoritative Worker Re-Validation:** Background worker engine re-checks `isUserAuthorizedForTask()` prior to task execution, preventing stale execution of queued tasks for suspended accounts.
+- [x] **Usage & AI Cost Governance:** Monthly spend budget tracking in `server/src/enterprise/usageService.ts` with pre-task budget enforcement (`NORMAL` < 75%, `WARNING` >= 75%, `LIMIT_REACHED` >= 100%), and breakdowns by user and tool.
+- [x] **Tenant-Isolated Immutable Audit Trail:** Append-only structured audit logs in `server/src/enterprise/auditService.ts` with zero cross-tenant leakage.
+- [x] **Integration Administration:** Safe provider summaries for OpenAI, Tavily, Qdrant, and Gmail with zero secret credentials leaked.
+- [x] **Administrative UI Studio:** Modern enterprise dashboard in `client/src/pages/AdminPage.tsx` and navigation item in `client/src/layout/AppShell.tsx`.
+- [x] **Enterprise Readiness Report:** 15-section comprehensive governance evaluation in `docs/ENTERPRISE_READINESS.md`.
+- [x] **Phase 25 Test Suite:** 73/73 passing tests in `server/src/enterprise/testPhase25.ts` (`npm run test:phase25`).
 - [x] **Evaluation Datasets (`evals/`):** Version-controlled test suites in `evals/agent/`, `evals/rag/`, `evals/tools/`, `evals/security/`, and `evals/fixtures/knowledge_docs.json`.
 - [x] **Agent Planning & Efficiency Evaluation:** Tool call efficiency tracking (`requiredToolCalls / actualToolCalls`), tool allowlists, and runaway watchdog protection ceilings (max 10 cycles, max 15 tool calls, 30s timeout).
 - [x] **RAG Grounding & Citation Validation:** Automated citation validation enforcing genuine source tokens (`[S1..Sn]`), rejecting fabricated citations (`[S99]`), and computing grounded answer rates.

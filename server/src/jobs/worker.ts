@@ -15,6 +15,7 @@ import { AgentRuntime } from "../agent/agentRuntime";
 import { lockManager } from "./lockManager";
 import { jobQueue } from "./queue";
 import { JobEntity, JOB_CONFIG } from "./jobTypes";
+import { OrganizationService } from "../enterprise/organizationService";
 
 export class BackgroundWorker {
   public readonly workerId: string;
@@ -164,6 +165,28 @@ export class BackgroundWorker {
     if (["COMPLETED", "FAILED", "CANCELLED"].includes(task.status)) {
       console.log(`[BackgroundWorker] Task '${taskId}' is already in terminal state '${task.status}'. Completing job.`);
       await jobQueue.complete(job.id);
+      return;
+    }
+
+    // Re-verify Authoritative Authorization (Phase 25 Milestones 82-87)
+    // Ensures real-time user lifecycle state and emergency kill switch are checked prior to execution
+    const authCheck = await OrganizationService.isUserAuthorizedForTask(
+      String(task.user_id),
+      String(task.organization_id)
+    );
+    if (!authCheck.authorized) {
+      console.warn(
+        `[BackgroundWorker] Task '${taskId}' rejected by enterprise governance: ${authCheck.reason}`
+      );
+      await pool.query(
+        `UPDATE tasks SET status = 'FAILED', error_message = ?, updated_at = NOW() WHERE id = ?;`,
+        [`Execution blocked by enterprise governance: ${authCheck.reason}`, taskId]
+      );
+      await jobQueue.fail(
+        job.id,
+        new Error(`Execution blocked by enterprise governance: ${authCheck.reason}`),
+        false
+      );
       return;
     }
 

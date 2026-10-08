@@ -12,6 +12,7 @@ import { approvalRouter } from "./approvals/approvalRoutes";
 import { workerRouter } from "./jobs/workerRoutes";
 import { reliabilityRouter } from "./reliability/reliabilityRoutes";
 import { observabilityRouter } from "./routes/observabilityRoutes";
+import { adminRouter } from "./routes/adminRoutes";
 import { correlationMiddleware } from "./observability/correlation";
 
 export const app = express();
@@ -43,6 +44,7 @@ app.use("/api/jobs", workerRouter);
 app.use("/api/integrations/gmail", gmailRouter);
 app.use("/api/approvals", approvalRouter);
 app.use("/api/observability", observabilityRouter);
+app.use("/api/admin", adminRouter);
 
 // Catch-all 404 handler
 app.use((_req: Request, res: Response) => {

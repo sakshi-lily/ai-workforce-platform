@@ -11,6 +11,7 @@
     "typecheck:server": "npm --prefix server run typecheck",
     "typecheck:client": "npm --prefix client run typecheck",
     "typecheck": "npm run typecheck:server && npm run typecheck:client",
+    "test:phase25": "npm --prefix server run test:phase25",
     "test:phase24": "npm --prefix server run test:phase24",
     "test:phase23": "npm --prefix server run test:phase23",
     "test:phase22": "npm --prefix server run test:phase22",

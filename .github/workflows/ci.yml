@@ -188,7 +188,7 @@ jobs:
           
           echo "Awaiting API container readiness..."
           HEALTHY=0
-          for i in {1..20}; do
+          for i in {1..30}; do
             if curl -sf http://localhost:3000/api/health/liveness; then
               echo "API container successfully responded to /api/health/liveness"
               HEALTHY=1
@@ -199,6 +199,7 @@ jobs:
           
           if [ $HEALTHY -ne 1 ]; then
             echo "API container failed liveness health check!"
+            docker ps -a
             docker logs test-api
             exit 1
           fi

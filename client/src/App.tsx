@@ -12,6 +12,7 @@ import { KnowledgePage } from './pages/KnowledgePage';
 import { IntegrationsPage } from './pages/IntegrationsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ApprovalsPage } from './pages/ApprovalsPage';
+import { AdminPage } from './pages/AdminPage';
 
 export default function App() {
   const { authState } = useAuth();
@@ -90,6 +91,8 @@ export default function App() {
       content = <IntegrationsPage />;
     } else if (path === '/app/settings' || path.startsWith('/app/settings/')) {
       content = <SettingsPage />;
+    } else if (path === '/app/admin' || path.startsWith('/app/admin/')) {
+      content = <AdminPage />;
     } else {
       content = <DashboardPage />;
     }

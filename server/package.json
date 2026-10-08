@@ -18,6 +18,7 @@
     "test:phase21": "tsx src/docker/testPhase21.ts",
     "test:phase22": "tsx src/aws/testPhase22.ts",
     "test:phase24": "tsx src/evals/testPhase24.ts",
+    "test:phase25": "tsx src/enterprise/testPhase25.ts",
     "test:phase23": "tsx src/cicd/testPhase23.ts",
     "test:smoke": "tsx src/cicd/smokeTests.ts",
     "ci:secrets": "tsx -e \"import { scanRepositoryForSecrets } from './src/cicd/secretAudit'; console.log(scanRepositoryForSecrets('../'));\"",

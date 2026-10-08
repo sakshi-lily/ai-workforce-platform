@@ -13,39 +13,33 @@ async function bootstrap() {
     console.warn("[AI Workforce Platform Backend] Environment warnings:", validation.errors);
   }
 
-  // 1. Seed initial demo data for database verification
-  try {
-    await ensureSeedData();
-    console.log("[AI Workforce Platform Backend] Seed data verified.");
-  } catch (error) {
-    console.warn("[AI Workforce Platform Backend] Seed data check deferred or failed:", error);
-  }
-
-  // 2. Initialize Redis connection
-  try {
-    await initRedis();
-  } catch (error) {
-    console.warn("[AI Workforce Platform Backend] Redis connection initialization deferred:", error);
-  }
-
-  // 3. Optionally start background worker in-process if enabled
-  if (process.env.START_IN_PROCESS_WORKER === "true") {
-    try {
-      const { backgroundWorker } = await import("./jobs/worker");
-      await backgroundWorker.start();
-      console.log("[AI Workforce Platform Backend] In-process background worker started.");
-    } catch (error) {
-      console.warn("[AI Workforce Platform Backend] In-process worker start warning:", error);
-    }
-  }
-
+  // 1. Start HTTP listener immediately so container liveness probes (/api/health/liveness) respond instantly
   const server = app.listen(PORT, () => {
     console.log(`[AI Workforce Platform Backend] Server is running on http://localhost:${PORT}`);
     console.log(`[AI Workforce Platform Backend] Process health check: http://localhost:${PORT}/api/health`);
+    console.log(`[AI Workforce Platform Backend] Process liveness probe: http://localhost:${PORT}/api/health/liveness`);
+    console.log(`[AI Workforce Platform Backend] Process readiness probe: http://localhost:${PORT}/api/health/readiness`);
     console.log(`[AI Workforce Platform Backend] Database health check: http://localhost:${PORT}/api/health/db`);
     console.log(`[AI Workforce Platform Backend] Redis health check: http://localhost:${PORT}/api/health/redis`);
     console.log(`[AI Workforce Platform Backend] Customers endpoint: http://localhost:${PORT}/api/customers`);
   });
+
+  // 2. Asynchronously verify database seed data without blocking container liveness
+  ensureSeedData()
+    .then(() => console.log("[AI Workforce Platform Backend] Seed data verified."))
+    .catch((error) => console.warn("[AI Workforce Platform Backend] Seed data check deferred or failed:", error?.message || error));
+
+  // 3. Asynchronously initialize Redis connection
+  initRedis()
+    .catch((error) => console.warn("[AI Workforce Platform Backend] Redis connection initialization deferred:", error?.message || error));
+
+  // 4. Optionally start background worker in-process if enabled
+  if (process.env.START_IN_PROCESS_WORKER === "true") {
+    import("./jobs/worker")
+      .then(({ backgroundWorker }) => backgroundWorker.start())
+      .then(() => console.log("[AI Workforce Platform Backend] In-process background worker started."))
+      .catch((error) => console.warn("[AI Workforce Platform Backend] In-process worker start warning:", error?.message || error));
+  }
 
   // Graceful shutdown on container termination signals (SIGTERM / SIGINT)
   const gracefulShutdown = async (signal: string) => {
