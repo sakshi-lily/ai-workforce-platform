@@ -210,11 +210,12 @@ jobs:
       - name: Verify Client Container Runtime & Nginx Health
         run: |
           docker run -d --name test-client -p 8080:80 \
+            --add-host api:127.0.0.1 \
             ai-workforce-client:ci-test
           
           echo "Awaiting Client container readiness..."
           CLIENT_HEALTHY=0
-          for i in {1..10}; do
+          for i in {1..15}; do
             if curl -sf http://127.0.0.1:8080/healthz || curl -sf http://localhost:8080/healthz; then
               echo "Client Nginx container successfully responded to /healthz"
               CLIENT_HEALTHY=1

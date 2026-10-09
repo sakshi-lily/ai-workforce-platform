@@ -5,6 +5,7 @@
   "description": "Enterprise-Grade Governed AI Workforce Platform Monorepo Root",
   "scripts": {
     "dev": "npm run dev:server",
+    "services:start": "powershell -ExecutionPolicy Bypass -File ./scripts/start-services.ps1",
     "dev:server": "npm --prefix server run dev",
     "dev:client": "npm --prefix client run dev",
     "start": "npm --prefix server start",
